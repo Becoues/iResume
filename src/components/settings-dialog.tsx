@@ -15,25 +15,13 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const MODELS_AIHUBMIX = [
+const MODELS = [
   { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
   { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
   { value: "gpt-5.4", label: "GPT 5.4" },
 ];
 
-const MODELS_YESCODE = [
-  { value: "gpt-5.4", label: "GPT 5.4" },
-  { value: "gpt-5.3-codex", label: "GPT 5.3 Codex" },
-  { value: "gpt-5.2", label: "GPT 5.2" },
-  { value: "gpt-5.2-codex", label: "GPT 5.2 Codex" },
-  { value: "gpt-5.1", label: "GPT 5.1" },
-  { value: "gpt-5.1-codex", label: "GPT 5.1 Codex" },
-  { value: "gpt-5.1-codex-mini", label: "GPT 5.1 Codex Mini" },
-  { value: "gpt-5.1-codex-max", label: "GPT 5.1 Codex Max" },
-];
-
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [provider, setProvider] = useState("AiHubMix");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("gemini-3.1-pro-preview");
   const [loadedMaskedKey, setLoadedMaskedKey] = useState("");
@@ -52,7 +40,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     try {
       const res = await fetch("/api/settings");
       const data = await res.json();
-      setProvider(data.provider || "AiHubMix");
       setApiKey(data.apiKey || "");
       setLoadedMaskedKey(data.apiKey || "");
       setModel(data.model || "gemini-3.1-pro-preview");
@@ -68,14 +55,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setTestResult(null);
     }
   }, [open, loadSettings]);
-
-  // When provider changes, ensure model is valid for that provider
-  const models = provider === "YesCode" ? MODELS_YESCODE : MODELS_AIHUBMIX;
-  useEffect(() => {
-    if (!models.some((m) => m.value === model)) {
-      setModel(models[0].value);
-    }
-  }, [provider, models, model]);
 
   const handleApiKeyFocus = () => {
     if (apiKey.includes("...") || apiKey.includes("••")) {
@@ -98,7 +77,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const res = await fetch("/api/settings/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey, model }),
+        body: JSON.stringify({ apiKey, model }),
       });
       const data = await res.json();
       setTestResult(data);
@@ -115,7 +94,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey, model }),
+        body: JSON.stringify({ apiKey, model }),
       });
       const data = await res.json();
       setApiKey(data.apiKey || "");
@@ -143,19 +122,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         ) : (
           <div className="space-y-5 py-2">
-            {/* Provider */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">API 提供商</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className={selectClasses}
-              >
-                <option value="AiHubMix">AiHubMix</option>
-                <option value="YesCode">YesCode</option>
-              </select>
-            </div>
-
             {/* API Key */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">API Key</label>
@@ -165,18 +131,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 onFocus={handleApiKeyFocus}
                 onBlur={handleApiKeyBlur}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  provider === "YesCode"
-                    ? "team-xxxxxxxx..."
-                    : "sk-xxxxxxxx..."
-                }
+                placeholder="sk-xxxxxxxx..."
                 className={selectClasses}
               />
-              {loadedMaskedKey && !isApiKeyEditing && (
-                <p className="text-xs text-muted-foreground">
-                  已配置密钥，点击输入框可重新填写
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                {loadedMaskedKey && !isApiKeyEditing
+                  ? "已配置密钥，点击输入框可重新填写"
+                  : "从 AiHubMix 获取 Key：https://aihubmix.com"}
+              </p>
             </div>
 
             {/* Model */}
@@ -187,7 +149,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 onChange={(e) => setModel(e.target.value)}
                 className={selectClasses}
               >
-                {models.map((m) => (
+                {MODELS.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>

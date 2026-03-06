@@ -11,14 +11,12 @@ export async function GET() {
 
   if (!settings) {
     return NextResponse.json({
-      provider: "AiHubMix",
       apiKey: "",
       model: "gemini-3.1-pro-preview",
     });
   }
 
   return NextResponse.json({
-    provider: settings.provider,
     apiKey: maskApiKey(settings.apiKey),
     model: settings.model,
   });
@@ -26,8 +24,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { provider, apiKey, model } = body as {
-    provider: string;
+  const { apiKey, model } = body as {
     apiKey: string;
     model: string;
   };
@@ -35,7 +32,7 @@ export async function PUT(request: Request) {
   // If the apiKey contains "..." it's the masked display value — don't overwrite
   const isKeyUnchanged = typeof apiKey === "string" && apiKey.includes("...");
 
-  const data: Record<string, string> = { provider, model };
+  const data: Record<string, string> = { model };
   if (!isKeyUnchanged && typeof apiKey === "string") {
     data.apiKey = apiKey;
   }
@@ -45,14 +42,12 @@ export async function PUT(request: Request) {
     update: data,
     create: {
       id: 1,
-      provider,
       model,
       apiKey: isKeyUnchanged ? "" : apiKey,
     },
   });
 
   return NextResponse.json({
-    provider: settings.provider,
     apiKey: maskApiKey(settings.apiKey),
     model: settings.model,
   });

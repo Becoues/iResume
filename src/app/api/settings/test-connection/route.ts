@@ -4,8 +4,7 @@ import { testConnection } from "@/lib/openai";
 
 export async function POST(request: Request) {
   const body = await request.json();
-  let { provider, apiKey, model } = body as {
-    provider: string;
+  let { apiKey, model } = body as {
     apiKey: string;
     model: string;
   };
@@ -20,6 +19,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "API Key 未填写" });
   }
 
-  const result = await testConnection(provider, apiKey, model);
+  const result = await testConnection(apiKey, model);
   return NextResponse.json(result);
 }

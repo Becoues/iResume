@@ -77,12 +77,20 @@ export async function POST(
       // ---------------------------------------------------------------
       let analysis: ResumeAnalysis;
       try {
-        // The model may wrap its JSON in a markdown code fence. Strip it
-        // before parsing so we get clean JSON.
-        const cleaned = accumulated
+        // Clean up the LLM output to extract valid JSON:
+        // 1. Strip markdown code fences if present
+        // 2. Extract the JSON object from any surrounding text
+        let cleaned = accumulated
           .replace(/^```(?:json)?\s*/i, "")
           .replace(/\s*```\s*$/, "")
           .trim();
+
+        // If the response doesn't start with '{', try to find the JSON object
+        const jsonStart = cleaned.indexOf("{");
+        const jsonEnd = cleaned.lastIndexOf("}");
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
+        }
 
         analysis = JSON.parse(cleaned) as ResumeAnalysis;
       } catch {
