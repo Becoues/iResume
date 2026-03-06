@@ -45,16 +45,29 @@
 
 - **Node.js** 18+（推荐 20+）
 - **npm**（随 Node.js 一起安装）
-- 一个 **AiHubMix API Key**（下面会教你怎么获取）
+- 一个 AI API Key（支持 **AiHubMix** 或 **YesCode**，二选一）
 
 ### 第一步：获取 API Key
 
-本项目使用 [AiHubMix](https://aihubmix.com) 作为 AI 接口代理，支持多种大模型。
+本项目支持两种 API 提供商，任选其一：
+
+#### 方式一：AiHubMix（推荐）
+
+[AiHubMix](https://aihubmix.com) 是一个 AI 接口聚合平台，支持多种大模型。
 
 1. 打开 [https://aihubmix.com](https://aihubmix.com)，注册一个账号
 2. 登录后进入控制台，找到 **API Key** 页面
 3. 点击 **创建新的 Key**，复制生成的 Key（以 `sk-` 开头）
 4. 保存好这个 Key，下一步要用到
+
+#### 方式二：YesCode
+
+[YesCode](https://co.yes.vg) 提供 team key 方式接入。
+
+1. 访问 [https://co.yes.vg](https://co.yes.vg) 获取 team key（以 `team-` 开头）
+2. 保存好这个 Key，下一步要用到
+
+![YesCode 配置示例](docs/images/screenshot-yescode.png)
 
 ### 第二步：克隆项目
 
@@ -77,21 +90,33 @@ npm install
 # 复制环境变量模板
 cp .env.example .env.local
 
-# 用你喜欢的编辑器打开，把 sk-xxx 替换成你的真实 Key
-# macOS:
-open .env.local
-# 或者用 VS Code:
+# 用你喜欢的编辑器打开
 code .env.local
 ```
 
-打开 `.env.local` 后，你会看到：
+打开 `.env.local` 后，根据你选择的 API 提供商进行配置：
 
-```
-AIHUBMIX_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DATABASE_URL="file:./prisma/dev.db"
+**如果你用 AiHubMix：**
+
+```env
+AIHUBMIX_API_KEY=sk-你的真实Key粘贴到这里
 ```
 
-把 `sk-xxxx...` 替换成你在第一步获取的 API Key，保存文件。
+**如果你用 YesCode：**
+
+```env
+# 注释掉 AiHubMix 那行，取消注释 YesCode 那行
+# AIHUBMIX_API_KEY=sk-xxx
+YESCODE_API_KEY=team-你的真实Key粘贴到这里
+```
+
+**切换模型（可选）：**
+
+默认使用 `gemini-3.1-pro-preview`，你也可以换成其他模型：
+
+```env
+MODEL=claude-sonnet-4-5    # 或 gpt-5.4
+```
 
 > **注意**: `DATABASE_URL` 不需要修改，保持默认即可。
 
@@ -140,7 +165,7 @@ npm run dev
 | [Tailwind CSS 3](https://tailwindcss.com) | 原子化 CSS |
 | [Prisma 5](https://www.prisma.io) | 数据库 ORM |
 | [SQLite](https://www.sqlite.org) | 轻量级本地数据库，零配置 |
-| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（通过 AiHubMix 代理） |
+| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（支持 AiHubMix / YesCode 代理） |
 | [pdfjs-dist](https://github.com/nickolasg/pdfjs-dist) | PDF 文本提取 |
 | [Recharts](https://recharts.org) | 雷达图等数据可视化 |
 | [Lucide React](https://lucide.dev) | 图标库 |
@@ -195,7 +220,15 @@ resume-analyzer/
 
 ### Q: 可以换其他 AI 模型吗？
 
-可以。修改 `src/lib/openai.ts` 中的 `MODEL` 常量即可。AiHubMix 支持多种模型，包括 GPT、Claude、Gemini 等。
+可以。在 `.env.local` 中设置 `MODEL` 环境变量即可切换：
+
+```env
+MODEL=claude-sonnet-4-5      # Claude
+MODEL=gemini-3.1-pro-preview  # Gemini（默认）
+MODEL=gpt-5.4                 # GPT
+```
+
+AiHubMix 和 YesCode 均支持以上模型。
 
 ---
 
