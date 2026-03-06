@@ -35,3 +35,11 @@ model Recording {
 
   @@index([resumeId, createdAt])
 }
+
+model Settings {
+  id        Int      @id @default(1)
+  provider  String   @default("AiHubMix")
+  apiKey    String   @default("")
+  model     String   @default("gemini-3.1-pro-preview")
+  updatedAt DateTime @updatedAt
+}

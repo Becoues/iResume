@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, X, Loader2, Sparkles } from "lucide-react";
+import { Upload, FileText, X, Loader2, Sparkles, Settings } from "lucide-react";
+import { SettingsDialog } from "@/components/settings-dialog";
 
 export default function HomePage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function HomePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -268,6 +270,18 @@ export default function HomePage() {
           )}
         </button>
       </div>
+
+      {/* Settings gear button */}
+      <button
+        type="button"
+        onClick={() => setSettingsOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background shadow-md text-muted-foreground hover:text-foreground hover:shadow-lg transition-all duration-200"
+        aria-label="设置"
+      >
+        <Settings className="w-5 h-5" />
+      </button>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }

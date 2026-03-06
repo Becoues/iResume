@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { openai, MODEL } from "@/lib/openai";
+import { getOpenAIClient, getModel } from "@/lib/openai";
 import { buildAnalysisPrompt } from "@/lib/prompt";
 import type { ResumeAnalysis } from "@/lib/types";
 
@@ -65,8 +65,10 @@ export async function POST(
     let accumulated = "";
 
     try {
+      const [openai, model] = await Promise.all([getOpenAIClient(), getModel()]);
+
       const stream = await openai.chat.completions.create({
-        model: MODEL,
+        model,
         stream: true,
         messages: [
           { role: "system", content: prompt.system },
