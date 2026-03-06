@@ -35,6 +35,7 @@ import {
   Clock,
   Download,
   Code,
+  XCircle,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -728,6 +729,38 @@ export default function ResumePage({
           >
             {streamText || "等待分析开始..."}
           </pre>
+        </div>
+      </div>
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // Render: Failed state
+  // -----------------------------------------------------------------------
+  if (resume.status === "failed" && !analyzing) {
+    return (
+      <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
+        <BackButton />
+        <ResumeHeader resume={resume} />
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-200 bg-gradient-to-br from-red-50 to-orange-50 py-16 gap-6 px-6">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+            <XCircle className="h-8 w-8 text-red-500" />
+          </div>
+          <div className="text-center space-y-2 max-w-lg">
+            <h2 className="text-xl font-bold text-foreground">分析失败</h2>
+            {resume.errorMessage && (
+              <div className="rounded-lg bg-red-100/80 border border-red-200 px-4 py-3 text-sm text-red-700 text-left break-all whitespace-pre-wrap">
+                {resume.errorMessage}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={startAnalysis}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30 hover:from-violet-700 hover:to-blue-700 transition-all active:scale-[0.98]"
+          >
+            <Play className="h-5 w-5" />
+            重新分析
+          </button>
         </div>
       </div>
     );
