@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# env (contains API keys)
+.env
+.env.local
+.env.*.local
+
+# database (contains user data)
+*.db
+*.db-journal
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# build info
+tsconfig.tsbuildinfo

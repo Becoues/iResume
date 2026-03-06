@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Resume {
+  id           String      @id @default(cuid())
+  filename     String
+  uploadDate   DateTime    @default(now())
+  pdfText      String
+  jdText       String?
+  analysisJson String?
+  status       String      @default("uploaded")
+  errorMessage String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  recordings   Recording[]
+
+  @@index([uploadDate])
+  @@index([status])
+}
+
+model Recording {
+  id        String   @id @default(cuid())
+  resumeId  String
+  filename  String
+  duration  Int
+  data      Bytes
+  createdAt DateTime @default(now())
+  resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, createdAt])
+}
