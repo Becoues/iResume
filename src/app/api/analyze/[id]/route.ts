@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getOpenAIClient, getModel } from "@/lib/openai";
+import { streamCompletion } from "@/lib/openai";
 import { buildAnalysisPrompt } from "@/lib/prompt";
 import type { ResumeAnalysis } from "@/lib/types";
 
@@ -65,26 +65,11 @@ export async function POST(
     let accumulated = "";
 
     try {
-      const [openai, model] = await Promise.all([getOpenAIClient(), getModel()]);
-
-      const stream = await openai.chat.completions.create({
-        model,
-        stream: true,
-        messages: [
-          { role: "system", content: prompt.system },
-          { role: "user", content: prompt.user },
-        ],
-      });
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content;
-        if (content) {
-          accumulated += content;
-          // Write each chunk as an SSE data frame
-          await writer.write(
-            encoder.encode(`data: ${JSON.stringify(content)}\n\n`)
-          );
-        }
+      for await (const content of streamCompletion(prompt.system, prompt.user)) {
+        accumulated += content;
+        await writer.write(
+          encoder.encode(`data: ${JSON.stringify(content)}\n\n`)
+        );
       }
 
       // ---------------------------------------------------------------
