@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
   AiHubMix: "https://aihubmix.com/v1",
-  YesCode: "https://co.yes.vg/team/v1",
+  YesCode: "https://co.yes.vg/team",
 };
 
 /** Env-var fallback when no DB settings exist */

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
   AiHubMix: "https://aihubmix.com/v1",
-  YesCode: "https://co.yes.vg/team/v1",
+  YesCode: "https://co.yes.vg/team",
 };
 
 export async function POST(request: Request) {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   try {
     await client.chat.completions.create({
       model,
-      max_tokens: 1,
+      max_completion_tokens: 1,
       messages: [{ role: "user", content: "Hi" }],
     });
     return NextResponse.json({ ok: true });

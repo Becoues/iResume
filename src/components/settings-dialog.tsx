@@ -15,10 +15,21 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const MODELS = [
+const MODELS_AIHUBMIX = [
   { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
   { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
   { value: "gpt-5.4", label: "GPT 5.4" },
+];
+
+const MODELS_YESCODE = [
+  { value: "gpt-5.4", label: "GPT 5.4" },
+  { value: "gpt-5.3-codex", label: "GPT 5.3 Codex" },
+  { value: "gpt-5.2", label: "GPT 5.2" },
+  { value: "gpt-5.2-codex", label: "GPT 5.2 Codex" },
+  { value: "gpt-5.1", label: "GPT 5.1" },
+  { value: "gpt-5.1-codex", label: "GPT 5.1 Codex" },
+  { value: "gpt-5.1-codex-mini", label: "GPT 5.1 Codex Mini" },
+  { value: "gpt-5.1-codex-max", label: "GPT 5.1 Codex Max" },
 ];
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
@@ -57,6 +68,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setTestResult(null);
     }
   }, [open, loadSettings]);
+
+  // When provider changes, ensure model is valid for that provider
+  const models = provider === "YesCode" ? MODELS_YESCODE : MODELS_AIHUBMIX;
+  useEffect(() => {
+    if (!models.some((m) => m.value === model)) {
+      setModel(models[0].value);
+    }
+  }, [provider, models, model]);
 
   const handleApiKeyFocus = () => {
     if (apiKey.includes("...") || apiKey.includes("••")) {
@@ -168,7 +187,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 onChange={(e) => setModel(e.target.value)}
                 className={selectClasses}
               >
-                {MODELS.map((m) => (
+                {models.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>
