@@ -1,4 +1,4 @@
-# 简历智评 — AI Resume Analyzer
+# iResume — AI 简历智评
 
 > 上传简历 PDF，AI 自动生成深度面试评估报告，帮助面试官快速洞察候选人真实实力。
 
@@ -70,8 +70,8 @@
 ### 第二步：克隆项目
 
 ```bash
-git clone git@github.com:Becoues/-.git
-cd '-'
+git clone git@github.com:Becoues/iResume.git
+cd iResume
 ```
 
 ### 第三步：安装依赖
