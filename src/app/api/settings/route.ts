@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 function maskApiKey(key: string): string {
   if (!key || key.length <= 8) return key ? "••••••••" : "";
   return `${key.slice(0, 4)}...${key.slice(-4)}`;

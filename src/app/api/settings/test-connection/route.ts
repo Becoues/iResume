@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { testConnection } from "@/lib/openai";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   const body = await request.json();
   let { apiKey, model, provider } = body as {

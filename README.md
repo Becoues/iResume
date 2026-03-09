@@ -88,23 +88,25 @@ npm install
 
 这一步会自动安装所有依赖并生成 Prisma 客户端。
 
-### 第四步：配置 API Key
-
-有两种方式，任选其一：
-
-#### 方式 A：通过环境变量配置
+### 第四步：配置环境变量
 
 ```bash
 cp .env.example .env.local
 ```
 
-编辑 `.env.local`：
+`.env.local` 中包含数据库路径和 API Key 配置，**必须创建此文件**，否则项目无法连接数据库：
 
 ```env
+# 数据库路径（必填，默认即可）
+DATABASE_URL="file:./prisma/dev.db"
+
+# API Key（可选，也可以在界面中配置）
 AIHUBMIX_API_KEY=sk-你的Key粘贴到这里
 ```
 
-#### 方式 B：通过界面配置（推荐）
+> 如果不需要通过环境变量配置 API Key，也**必须保留 `DATABASE_URL` 这一行**。
+
+#### API Key 配置（可选）
 
 启动项目后，点击页面右下角的 **齿轮按钮**，在设置面板中：
 
@@ -146,6 +148,16 @@ npm run dev
 ## Docker 部署
 
 如果你不想安装 Node.js，可以用 Docker 一键启动：
+
+### 环境要求
+
+- **Docker** 20+（推荐最新版）
+- **Docker Compose** V2+（Docker Desktop 已内置）
+
+> **国内用户注意：** 如果拉取镜像超时，请在 Docker Desktop 的 **Settings → Docker Engine** 中添加镜像加速器：
+> ```json
+> "registry-mirrors": ["https://docker.1ms.run", "https://docker.m.daocloud.io"]
+> ```
 
 ### 方式 A：Docker Compose（推荐）
 
