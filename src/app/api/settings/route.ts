@@ -11,30 +11,47 @@ export async function GET() {
 
   if (!settings) {
     return NextResponse.json({
-      apiKey: "",
+      provider: "AiHubMix",
+      apiKeyAihubmix: "",
+      apiKeyDeerapi: "",
       model: "gemini-3.1-pro-preview",
     });
   }
 
   return NextResponse.json({
-    apiKey: maskApiKey(settings.apiKey),
+    provider: settings.provider,
+    apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
+    apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
     model: settings.model,
   });
 }
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { apiKey, model } = body as {
-    apiKey: string;
+  const { provider, apiKeyAihubmix, apiKeyDeerapi, model } = body as {
+    provider: string;
+    apiKeyAihubmix?: string;
+    apiKeyDeerapi?: string;
     model: string;
   };
 
-  // If the apiKey contains "..." it's the masked display value — don't overwrite
-  const isKeyUnchanged = typeof apiKey === "string" && apiKey.includes("...");
+  // Build update data — only overwrite keys that are not masked
+  const data: Record<string, string> = { provider, model };
 
-  const data: Record<string, string> = { model };
-  if (!isKeyUnchanged && typeof apiKey === "string") {
-    data.apiKey = apiKey;
+  if (
+    typeof apiKeyAihubmix === "string" &&
+    !apiKeyAihubmix.includes("...") &&
+    !apiKeyAihubmix.includes("••")
+  ) {
+    data.apiKeyAihubmix = apiKeyAihubmix;
+  }
+
+  if (
+    typeof apiKeyDeerapi === "string" &&
+    !apiKeyDeerapi.includes("...") &&
+    !apiKeyDeerapi.includes("••")
+  ) {
+    data.apiKeyDeerapi = apiKeyDeerapi;
   }
 
   const settings = await prisma.settings.upsert({
@@ -42,13 +59,27 @@ export async function PUT(request: Request) {
     update: data,
     create: {
       id: 1,
+      provider,
       model,
-      apiKey: isKeyUnchanged ? "" : apiKey,
+      apiKeyAihubmix:
+        typeof apiKeyAihubmix === "string" &&
+        !apiKeyAihubmix.includes("...") &&
+        !apiKeyAihubmix.includes("••")
+          ? apiKeyAihubmix
+          : "",
+      apiKeyDeerapi:
+        typeof apiKeyDeerapi === "string" &&
+        !apiKeyDeerapi.includes("...") &&
+        !apiKeyDeerapi.includes("••")
+          ? apiKeyDeerapi
+          : "",
     },
   });
 
   return NextResponse.json({
-    apiKey: maskApiKey(settings.apiKey),
+    provider: settings.provider,
+    apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
+    apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
     model: settings.model,
   });
 }

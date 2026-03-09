@@ -14,9 +14,10 @@
 export function buildAnalysisPrompt(
   pdfText: string,
   jdText?: string,
+  filename?: string,
 ): { system: string; user: string } {
   const system = buildSystemPrompt();
-  const user = buildUserMessage(pdfText, jdText);
+  const user = buildUserMessage(pdfText, jdText, filename);
   return { system, user };
 }
 
@@ -214,9 +215,9 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 你返回的JSON对象必须严格符合以下结构：
 {
   "candidateProfile": {
-    "name": "候选人姓名",
+    "name": "候选人姓名（优先从简历内容提取，若简历中未明确标注则从PDF文件名中推断）",
     "techDirection": "技术方向",
-    "experienceYears": 数字,
+    "experienceYears": "工作年限（如为应届生或实习生，填写实习年限并标注，如'实习1年'或'应届'）",
     "levelMatch": "匹配的级别描述",
     "techStack": [{ "name": "技术名", "level": "expert|proficient|familiar", "evidence": "证据" }]
   },
@@ -288,10 +289,18 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 // User message
 // ---------------------------------------------------------------------------
 
-function buildUserMessage(pdfText: string, jdText?: string): string {
+function buildUserMessage(pdfText: string, jdText?: string, filename?: string): string {
   const parts: string[] = [];
 
   parts.push("请根据以下简历内容进行全面深度分析，严格按照系统提示中定义的JSON结构返回分析结果。");
+
+  if (filename) {
+    parts.push("");
+    parts.push(`=== PDF文件名 ===`);
+    parts.push(filename);
+    parts.push("（注意：如果简历正文中未明确标注候选人姓名，请从文件名中推断。简历正文中的姓名优先级更高。）");
+  }
+
   parts.push("");
   parts.push("=== 简历内容 ===");
   parts.push(pdfText.trim());

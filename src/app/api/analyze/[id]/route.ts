@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { streamCompletion } from "@/lib/openai";
 import { buildAnalysisPrompt } from "@/lib/prompt";
 import type { ResumeAnalysis } from "@/lib/types";
+import { postProcessScores } from "@/lib/score-utils";
 
 /**
  * POST /api/analyze/[id]
@@ -50,7 +51,7 @@ export async function POST(
   // -----------------------------------------------------------------------
   // 3. Build the prompt
   // -----------------------------------------------------------------------
-  const prompt = buildAnalysisPrompt(resume.pdfText, resume.jdText ?? undefined);
+  const prompt = buildAnalysisPrompt(resume.pdfText, resume.jdText ?? undefined, resume.filename);
 
   // -----------------------------------------------------------------------
   // 4 & 5. Stream the LLM response to the client via TransformStream
@@ -93,6 +94,9 @@ export async function POST(
         }
 
         analysis = JSON.parse(cleaned) as ResumeAnalysis;
+
+        // Post-process: recalculate scores from sub-scores to spread distribution
+        postProcessScores(analysis);
       } catch {
         // If the LLM output is not valid JSON, store the raw text and
         // mark as failed so the user can inspect what went wrong.

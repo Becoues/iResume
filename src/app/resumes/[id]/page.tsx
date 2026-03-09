@@ -243,17 +243,17 @@ function recommendationStyle(rec: string) {
       label: "\u5F3A\u70C8\u63A8\u8350",
     },
     recommend: {
-      bg: "bg-blue-100",
-      text: "text-blue-700",
+      bg: "bg-green-50",
+      text: "text-green-700",
       label: "\u63A8\u8350",
     },
     conditional: {
-      bg: "bg-yellow-100",
+      bg: "bg-yellow-50",
       text: "text-yellow-700",
       label: "\u6709\u6761\u4EF6\u63A8\u8350",
     },
     not_recommend: {
-      bg: "bg-red-100",
+      bg: "bg-red-50",
       text: "text-red-700",
       label: "\u4E0D\u63A8\u8350",
     },
@@ -262,9 +262,9 @@ function recommendationStyle(rec: string) {
 }
 
 function finalScoreGradient(score: number): string {
-  if (score >= 80) return "from-emerald-500 to-teal-500";
-  if (score >= 60) return "from-blue-500 to-indigo-500";
-  if (score >= 40) return "from-yellow-500 to-orange-500";
+  if (score >= 85) return "from-emerald-500 to-teal-500";
+  if (score >= 70) return "from-green-500 to-emerald-500";
+  if (score >= 50) return "from-yellow-500 to-amber-500";
   return "from-red-500 to-rose-500";
 }
 

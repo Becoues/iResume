@@ -5,32 +5,46 @@ import { prisma } from "@/lib/db";
 // Provider config
 // ---------------------------------------------------------------------------
 
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  AiHubMix: "https://aihubmix.com/v1",
+  DeerAPI: "https://api.deerapi.com/v1",
+};
+
 interface LLMConfig {
   apiKey: string;
   model: string;
+  baseURL: string;
 }
 
 async function getConfig(): Promise<LLMConfig> {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-  if (settings?.apiKey) {
-    return {
-      apiKey: settings.apiKey,
-      model: settings.model,
-    };
+  if (settings) {
+    const provider = settings.provider || "AiHubMix";
+    const apiKey =
+      provider === "DeerAPI" ? settings.apiKeyDeerapi : settings.apiKeyAihubmix;
+    if (apiKey) {
+      return {
+        apiKey,
+        model: settings.model,
+        baseURL: PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.AiHubMix,
+      };
+    }
   }
   return {
     apiKey: process.env.AIHUBMIX_API_KEY || "",
     model: process.env.MODEL || "gemini-3.1-pro-preview",
+    baseURL: PROVIDER_BASE_URLS.AiHubMix,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Streaming interface
+// LLM completion — streaming, yields chunks as they arrive
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a streaming LLM completion that yields text chunks.
- * Uses OpenAI-compatible protocol via AiHubMix proxy.
+ * Sends a chat completion request with streaming enabled. Yields text chunks
+ * as they arrive so the client can display progress in real time.
+ * The caller is responsible for accumulating chunks and parsing the final JSON.
  */
 export async function* streamCompletion(
   systemPrompt: string,
@@ -40,11 +54,12 @@ export async function* streamCompletion(
 
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://aihubmix.com/v1",
+    baseURL: config.baseURL,
   });
 
   const stream = await client.chat.completions.create({
     model: config.model,
+    max_completion_tokens: 65536,
     stream: true,
     messages: [
       { role: "system", content: systemPrompt },
@@ -54,7 +69,9 @@ export async function* streamCompletion(
 
   for await (const chunk of stream) {
     const content = chunk.choices[0]?.delta?.content;
-    if (content) yield content;
+    if (content) {
+      yield content;
+    }
   }
 }
 
@@ -65,12 +82,12 @@ export async function* streamCompletion(
 export async function testConnection(
   apiKey: string,
   model: string,
+  provider: string = "AiHubMix",
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const client = new OpenAI({
-      apiKey,
-      baseURL: "https://aihubmix.com/v1",
-    });
+    const baseURL =
+      PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.AiHubMix;
+    const client = new OpenAI({ apiKey, baseURL });
     await client.chat.completions.create({
       model,
       max_completion_tokens: 1,

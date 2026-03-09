@@ -37,8 +37,10 @@ model Recording {
 }
 
 model Settings {
-  id        Int      @id @default(1)
-  apiKey    String   @default("")
-  model     String   @default("gemini-3.1-pro-preview")
-  updatedAt DateTime @updatedAt
+  id              Int      @id @default(1)
+  provider        String   @default("AiHubMix")
+  apiKeyAihubmix  String   @default("")
+  apiKeyDeerapi   String   @default("")
+  model           String   @default("gemini-3.1-pro-preview")
+  updatedAt       DateTime @updatedAt
 }

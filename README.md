@@ -30,9 +30,10 @@
 ### 更多亮点
 
 - **实时流式分析** — SSE 流式输出，分析过程实时可见
+- **后台分析** — 分析过程中可自由浏览其他简历记录，分析在服务端后台继续执行，完成后自动保存
 - **JD 智能匹配** — 可选上传岗位 JD，自动逐项匹配能力要求
 - **收藏夹** — 一键收藏关键问题和分析要点，面试时快速回顾
-- **面试录音** — 内置录音功能，录音自动挂载到对应简历
+- **面试录音** — 内置麦克风录音功能，录音自动挂载到对应简历（注：受浏览器安全限制，仅支持麦克风录音，不支持录制电脑系统声音）
 - **历史记录** — 所有分析报告持久化存储，随时回看
 
 ![技术问题](resume-analyzer/docs/images/技术问题.png)
@@ -47,16 +48,18 @@
 
 - **Node.js** 18+（推荐 20+）
 - **npm**（随 Node.js 一起安装）
-- 一个 **AiHubMix** API Key
+- 一个 **AiHubMix** 或 **DeerAPI** 的 API Key
 
 ### 第一步：获取 API Key
 
-本项目通过 [AiHubMix](https://aihubmix.com) 调用大模型 API（OpenAI 兼容协议），支持 Gemini、Claude、GPT 等多种模型。
+本项目支持以下 API 渠道（均兼容 OpenAI 协议），任选其一：
 
-1. 打开 [https://aihubmix.com](https://aihubmix.com)，注册账号
-2. 登录后进入控制台，找到 **API Key** 页面
-3. 点击 **创建新的 Key**，复制生成的 Key（以 `sk-` 开头）
-4. 保存好这个 Key，后面要用
+| 渠道 | 地址 | 说明 |
+|------|------|------|
+| **AiHubMix** | [aihubmix.com](https://aihubmix.com) | 默认渠道 |
+| **DeerAPI** (小鹿API) | [deerapi.com](https://www.deerapi.com) | 国内友好 |
+
+注册账号后，在控制台创建 API Key（以 `sk-` 开头），保存好后面要用。
 
 **支持的模型：**
 | 模型 | 说明 |
@@ -64,8 +67,11 @@
 | `gemini-3.1-pro-preview` | Google Gemini（默认，性价比高） |
 | `claude-sonnet-4-5` | Anthropic Claude |
 | `gpt-5.4` | OpenAI GPT |
+| `gemini-3.1-flash-lite-preview` | Google Gemini Flash Lite（速度快） |
+| `qwen3.5-27b` | 通义千问（速度快） |
+| `deepseek-v3.2` | DeepSeek V3.2（速度快） |
 
-> **想使用其他 API 提供商？** 本项目目前仅内置 AiHubMix 支持。如需接入其他提供商（如 OpenRouter、自建代理等），可自行修改 `src/lib/openai.ts` 中的 `baseURL` 和认证逻辑，只要兼容 OpenAI API 协议即可。
+> **想使用其他 API 提供商？** 本项目内置 AiHubMix 和 DeerAPI 支持。如需接入其他提供商（如 OpenRouter、自建代理等），可自行修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 和相关逻辑，只要兼容 OpenAI API 协议即可。
 
 ### 第二步：克隆项目
 
@@ -102,14 +108,15 @@ AIHUBMIX_API_KEY=sk-你的Key粘贴到这里
 
 启动项目后，点击页面右下角的 **齿轮按钮**，在设置面板中：
 
-1. 填写 **API Key**（从 AiHubMix 获取的 `sk-` 开头的 Key）
-2. 选择 **模型**
-3. 点击 **测试连接** 验证配置是否正确
-4. 点击 **应用** 保存
+1. 选择 **API 渠道**（AiHubMix 或 DeerAPI）
+2. 填写 **API Key**（对应渠道的 `sk-` 开头的 Key）
+3. 选择 **模型**
+4. 点击 **测试连接** 验证配置是否正确
+5. 点击 **应用** 保存
 
 ![API 配置](resume-analyzer/docs/images/api配置.png)
 
-> 界面配置的优先级高于环境变量。配置保存在本地数据库中，重启后依然有效。已保存的 Key 仅显示首尾 4 位。
+> 界面配置的优先级高于环境变量。配置保存在本地数据库中，重启后依然有效。已保存的 Key 仅显示首尾 4 位。切换渠道时会自动显示该渠道上次保存的 Key。
 
 ### 第五步：初始化数据库
 
@@ -156,7 +163,7 @@ npm run dev
 | [Tailwind CSS 3](https://tailwindcss.com) | 原子化 CSS 样式 |
 | [Prisma 5](https://www.prisma.io) | 数据库 ORM |
 | [SQLite](https://www.sqlite.org) | 轻量级本地数据库，零配置 |
-| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（通过 AiHubMix 代理） |
+| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（支持 AiHubMix / DeerAPI 多渠道） |
 | [pdfjs-dist](https://github.com/nickolasg/pdfjs-dist) | PDF 文本提取 |
 | [Recharts](https://recharts.org) | 雷达图等数据可视化 |
 | [Lucide React](https://lucide.dev) | 图标库 |
@@ -185,8 +192,9 @@ resume-analyzer/
 │   │   ├── settings-dialog.tsx # 设置弹窗组件
 │   │   └── ui/                 # shadcn 风格 UI 组件
 │   └── lib/
-│       ├── openai.ts           # OpenAI SDK 客户端（AiHubMix）
+│       ├── openai.ts           # OpenAI SDK 客户端（多渠道支持）
 │       ├── prompt.ts           # DNA × 四层架构评估 Prompt
+│       ├── score-utils.ts      # 分数后处理与分布拉伸
 │       ├── types.ts            # ResumeAnalysis 类型定义
 │       ├── pdf.ts              # PDF 文本提取
 │       └── db.ts               # Prisma 单例
@@ -198,16 +206,18 @@ resume-analyzer/
 
 ## 自定义 API 提供商
 
-默认使用 AiHubMix 作为 API 代理。如需替换为其他 OpenAI 兼容的 API 提供商，只需修改 `src/lib/openai.ts`：
+内置 AiHubMix 和 DeerAPI 两个渠道。如需新增其他 OpenAI 兼容的 API 提供商，在 `src/lib/openai.ts` 的 `PROVIDER_BASE_URLS` 中添加映射即可：
 
 ```typescript
-const client = new OpenAI({
-  apiKey: config.apiKey,
-  baseURL: "https://your-api-provider.com/v1",  // 改这里
-});
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  AiHubMix: "https://aihubmix.com/v1",
+  DeerAPI: "https://api.deerapi.com/v1",
+  // 新增你的渠道：
+  MyProvider: "https://your-api-provider.com/v1",
+};
 ```
 
-只要目标服务兼容 OpenAI Chat Completions API（`/v1/chat/completions`），即可无缝替换。
+同时在 `src/components/settings-dialog.tsx` 的 `PROVIDERS` 数组中添加对应的选项。只要目标服务兼容 OpenAI Chat Completions API（`/v1/chat/completions`），即可无缝接入。
 
 ---
 
@@ -215,7 +225,7 @@ const client = new OpenAI({
 
 ### Q: 分析速度比较慢？
 
-分析一份简历大约需要 30-90 秒，取决于简历长度、模型响应速度和网络状况。分析过程是流式的，你可以实时看到输出内容。
+单份简历的完整分析（10 个模块）大约需要 **5-10 分钟**（以 `gemini-3.1-pro-preview` 为例），取决于简历长度和模型响应速度。分析支持后台执行——你可以在分析过程中自由浏览其他简历记录，分析完成后结果会自动保存。
 
 ### Q: 测试连接失败？
 
@@ -230,6 +240,14 @@ const client = new OpenAI({
 ### Q: 数据存在哪里？安全吗？
 
 所有数据存储在本地 SQLite 数据库（`prisma/dev.db`），不会上传到任何外部服务器。简历内容仅在分析时发送给 AI 接口。API Key 在界面中仅显示首尾 4 位。
+
+### Q: 录音能录制电脑系统声音吗？
+
+不能。录音功能基于浏览器 `MediaRecorder` API，受安全策略限制**仅支持麦克风输入**。如需录制电脑内部音频（如扬声器输出），需借助系统级虚拟音频工具（如 macOS 的 BlackHole、Windows 的 VB-Cable）将系统音频路由到虚拟麦克风，再由本应用录制。
+
+### Q: 想接入其他 API 提供商？
+
+本项目内置 [AiHubMix](https://aihubmix.com) 和 [DeerAPI](https://www.deerapi.com) 支持。如需接入其他提供商（OpenRouter、自建代理等），修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 映射即可，只要兼容 OpenAI Chat Completions API（`/v1/chat/completions`）协议。你也可以直接让 AI 帮你改这个文件。
 
 ---
 

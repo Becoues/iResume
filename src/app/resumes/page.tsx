@@ -62,15 +62,19 @@ function getRecommendationStyle(rec: string | null): { label: string; className:
   const map: Record<string, { label: string; className: string }> = {
     strong_recommend: {
       label: "强烈推荐",
-      className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20",
+      className: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-600/20",
     },
     recommend: {
       label: "推荐",
-      className: "bg-blue-50 text-blue-700 ring-1 ring-blue-600/20",
+      className: "bg-green-50 text-green-700 ring-1 ring-green-600/20",
     },
     cautious_recommend: {
       label: "谨慎推荐",
       className: "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20",
+    },
+    conditional: {
+      label: "有条件推荐",
+      className: "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-600/20",
     },
     not_recommend: {
       label: "不推荐",
