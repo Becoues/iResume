@@ -143,6 +143,31 @@ npm run dev
 
 ---
 
+## Docker 部署
+
+如果你不想安装 Node.js，可以用 Docker 一键启动：
+
+### 方式 A：Docker Compose（推荐）
+
+```bash
+git clone git@github.com:Becoues/iResume.git
+cd iResume
+docker compose up -d
+```
+
+### 方式 B：手动构建
+
+```bash
+docker build -t iresume .
+docker run -d -p 3000:3000 -v iresume-data:/app/data iresume
+```
+
+启动后访问 **http://localhost:3000**，在页面齿轮按钮中配置 API Key 即可。
+
+> 数据（简历、录音、API 设置）存储在 Docker volume `iresume-data` 中，删除容器不会丢失数据。
+
+---
+
 ## 使用方法
 
 1. **上传简历** — 在首页拖拽或点击上传 PDF 格式的简历

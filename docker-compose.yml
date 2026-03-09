@@ -1,0 +1,13 @@
+services:
+  iresume:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - iresume-data:/app/data
+    environment:
+      - DATABASE_URL=file:./data/dev.db
+    restart: unless-stopped
+
+volumes:
+  iresume-data:

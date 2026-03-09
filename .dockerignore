@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+*.db
+*.db-journal
+.env
+.env.local
+.env.*.local
+.claude
+.DS_Store
+docs/images
