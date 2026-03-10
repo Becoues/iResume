@@ -165,19 +165,21 @@ npm run dev
 git clone git@github.com:Becoues/iResume.git
 cd iResume
 docker compose build
-docker run -d --name iresume -p 3000:3000 -v iresume-data:/app/data resume-analyzer-iresume:latest
+docker run -d --name iresume -p 3000:3000 -v ./prisma:/app/prisma resume-analyzer-iresume:latest
 ```
 
 ### 方式 B：手动构建
 
 ```bash
 docker build -t iresume .
-docker run -d --name iresume -p 3000:3000 -v iresume-data:/app/data iresume
+docker run -d --name iresume -p 3000:3000 -v ./prisma:/app/prisma iresume
 ```
 
 启动后访问 **http://localhost:3000**，在页面齿轮按钮中配置 API Key 即可。
 
-> 数据（简历、录音、API 设置）存储在 Docker volume `iresume-data` 中，删除容器不会丢失数据。
+> 数据（简历、录音、API 设置）存储在本地 `prisma/dev.db` 中，Docker 与本地开发共享同一数据库。
+>
+> **注意：不要同时运行 Docker 和 `npm run dev`，SQLite 不支持多进程并发写入，会导致锁冲突。**
 
 ---
 

@@ -35,7 +35,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL="file:/app/data/dev.db"
+ENV DATABASE_URL="file:/app/prisma/dev.db"
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
@@ -63,16 +63,6 @@ COPY --from=builder /app/node_modules/pdfjs-dist/package.json ./node_modules/pdf
 # Copy entrypoint script
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
-
-# Create data directory for SQLite, set prisma engines writable
-RUN mkdir -p /app/data && \
-    chown -R nextjs:nodejs /app/data && \
-    chown -R nextjs:nodejs /app/node_modules/.prisma && \
-    chown -R nextjs:nodejs /app/node_modules/@prisma && \
-    chown -R nextjs:nodejs /app/node_modules/prisma && \
-    chown -R nextjs:nodejs /app/prisma
-
-USER nextjs
 
 EXPOSE 3000
 

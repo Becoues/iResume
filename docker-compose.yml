@@ -4,10 +4,7 @@ services:
     ports:
       - "3001:3000"
     volumes:
-      - iresume-data:/app/data
+      - ./prisma:/app/prisma
     environment:
-      - DATABASE_URL=file:/app/data/dev.db
+      - DATABASE_URL=file:/app/prisma/dev.db
     restart: unless-stopped
-
-volumes:
-  iresume-data:
