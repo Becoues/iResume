@@ -164,14 +164,15 @@ npm run dev
 ```bash
 git clone git@github.com:Becoues/iResume.git
 cd iResume
-docker compose up -d
+docker compose build
+docker run -d --name iresume -p 3000:3000 -v iresume-data:/app/data resume-analyzer-iresume:latest
 ```
 
 ### 方式 B：手动构建
 
 ```bash
 docker build -t iresume .
-docker run -d -p 3000:3000 -v iresume-data:/app/data iresume
+docker run -d --name iresume -p 3000:3000 -v iresume-data:/app/data iresume
 ```
 
 启动后访问 **http://localhost:3000**，在页面齿轮按钮中配置 API Key 即可。

@@ -289,9 +289,23 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 // User message
 // ---------------------------------------------------------------------------
 
+function getBeijingTime(): string {
+  return new Date().toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "long",
+  });
+}
+
 function buildUserMessage(pdfText: string, jdText?: string, filename?: string): string {
   const parts: string[] = [];
 
+  parts.push(`当前时间（北京时间）：${getBeijingTime()}`);
+  parts.push("");
   parts.push("请根据以下简历内容进行全面深度分析，严格按照系统提示中定义的JSON结构返回分析结果。");
 
   if (filename) {

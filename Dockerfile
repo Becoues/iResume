@@ -6,6 +6,9 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 
+# Install openssl so Prisma detects the correct engine (openssl-3.0.x)
+RUN apk add --no-cache openssl
+
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
@@ -50,6 +53,12 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
+# Copy pdfjs-dist runtime files (worker + CMap + fonts for Chinese PDF parsing)
+COPY --from=builder /app/node_modules/pdfjs-dist/legacy/build ./node_modules/pdfjs-dist/legacy/build
+COPY --from=builder /app/node_modules/pdfjs-dist/cmaps ./node_modules/pdfjs-dist/cmaps
+COPY --from=builder /app/node_modules/pdfjs-dist/standard_fonts ./node_modules/pdfjs-dist/standard_fonts
+COPY --from=builder /app/node_modules/pdfjs-dist/package.json ./node_modules/pdfjs-dist/package.json
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh ./
