@@ -59,7 +59,7 @@ export async function* streamCompletion(
 
   const stream = await client.chat.completions.create({
     model: config.model,
-    max_completion_tokens: 65536,
+    max_completion_tokens: 131072,
     stream: true,
     response_format: { type: "json_object" },
     messages: [

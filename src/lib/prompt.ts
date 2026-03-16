@@ -210,6 +210,18 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 11. projectAnalysis 数组必须为简历中的每个项目都生成分析条目
 12. 所有 evidence 字段应尽量引用简历原文
 
+# 关键：控制输出长度
+
+为避免输出被截断，你必须严格控制每个字段的长度：
+- 所有 evidence、credibility、risk 字段：不超过50个汉字
+- 所有 summary 字段：不超过80个汉字
+- question 字段：不超过60个汉字
+- suspiciousPoint、verificationDirection、criteria 字段：不超过60个汉字
+- expectedPoints/expectedKeywords 数组：每项不超过15个汉字，最多3项
+- background、architectureDescription、results 字段：不超过60个汉字
+- followUp 字段：不超过40个汉字
+- 优先保证JSON结构完整，宁可内容简洁也不要输出被截断
+
 # JSON输出结构
 
 你返回的JSON对象必须严格符合以下结构：
