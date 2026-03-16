@@ -83,7 +83,9 @@ export async function POST(
 
         // Post-process: recalculate scores from sub-scores to spread distribution
         postProcessScores(analysis);
-      } catch {
+      } catch (parseErr) {
+        console.error(`JSON parse failed for resume ${params.id}:`, parseErr);
+        console.error(`Raw output length: ${accumulated.length}, last 200 chars: ${accumulated.slice(-200)}`);
         // If the LLM output is not valid JSON, store the raw text and
         // mark as failed so the user can inspect what went wrong.
         await prisma.resume.update({

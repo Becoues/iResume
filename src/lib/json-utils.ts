@@ -61,6 +61,16 @@ export function extractAndParseJSON(raw: string): unknown {
     // All strategies exhausted
   }
 
+  // Strategy 5: truncated JSON repair — close unclosed brackets/strings
+  const repaired = repairTruncatedJSON(fenceStripped);
+  if (repaired) {
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      // continue
+    }
+  }
+
   throw new Error("Failed to extract valid JSON from LLM output");
 }
 
@@ -138,4 +148,100 @@ function fixCommonJSONErrors(json: string): string {
   });
 
   return fixed;
+}
+
+/**
+ * Attempt to repair truncated JSON by:
+ * 1. Truncating back to the last complete key-value pair
+ * 2. Closing any open strings, arrays, and objects
+ *
+ * This handles the common case where the LLM output exceeds
+ * max_completion_tokens and gets cut off mid-sentence.
+ */
+function repairTruncatedJSON(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let json = text.slice(start);
+
+  // Remove any trailing incomplete string value:
+  // Find the last complete key-value or array element by cutting back
+  // to the last comma, closing bracket, or colon followed by a value.
+  // Strategy: cut back to the last line that ends with a valid JSON delimiter.
+
+  // First, close any open string: if we have an odd number of unescaped quotes,
+  // trim back to the last complete quoted string.
+  let inString = false;
+  let lastSafePos = -1;
+  let escape = false;
+  const stack: string[] = []; // track open { and [
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+      lastSafePos = i;
+    } else if (ch === "}" || ch === "]") {
+      stack.pop();
+      lastSafePos = i;
+    } else if (ch === "," || ch === ":") {
+      lastSafePos = i;
+    }
+  }
+
+  // If we're in the middle of a string, cut back to just before the opening quote
+  if (inString) {
+    // Find the last unescaped opening quote
+    let quotePos = json.length - 1;
+    while (quotePos >= 0) {
+      if (json[quotePos] === '"' && (quotePos === 0 || json[quotePos - 1] !== "\\")) {
+        break;
+      }
+      quotePos--;
+    }
+    json = json.slice(0, quotePos) + '""';
+  }
+
+  // Trim trailing commas and whitespace
+  json = json.replace(/,\s*$/, "");
+
+  // Re-scan to count open brackets
+  const closeStack: string[] = [];
+  inString = false;
+  escape = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") closeStack.push("}");
+    else if (ch === "[") closeStack.push("]");
+    else if (ch === "}" || ch === "]") closeStack.pop();
+  }
+
+  // Close all open brackets in reverse order
+  while (closeStack.length > 0) {
+    json += closeStack.pop();
+  }
+
+  return json;
 }
