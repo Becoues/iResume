@@ -125,14 +125,14 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 - mustAskQuestions: 面试中必须追问的问题列表（至少2个）
 
 ## 技术问题库（technicalQuestions）
-必须生成恰好20个技术面试问题，按难度分三档：
+必须生成恰好15个技术面试问题，按难度分三档：
 
-- basic（基础级，ID: 1-7）：考察基本功和工程素养
-- intermediate（中级，ID: 8-14）：考察实战经验和问题解决能力
-- expert（专家级，ID: 15-20）：考察架构思维和深度技术理解
+- basic（基础级，ID: 1-5）：考察基本功和工程素养
+- intermediate（中级，ID: 6-10）：考察实战经验和问题解决能力
+- expert（专家级，ID: 11-15）：考察架构思维和深度技术理解
 
 每个问题必须包含：
-- id: 编号（1-20）
+- id: 编号（1-15）
 - level: "basic" | "intermediate" | "expert"
 - question: 具体问题（结合候选人简历中的技术栈）
 - examPoint: 考察要点
@@ -204,7 +204,7 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 6. 确保JSON可以被标准JSON解析器直接解析
 7. 所有评分必须是整数
 8. claimsAudit 数组必须包含至少8个条目
-9. technicalQuestions 数组必须恰好包含20个条目
+9. technicalQuestions 数组必须恰好包含15个条目
 10. algorithmQuestions 数组必须恰好包含9个条目（每个难度3道）
 10. dnaFitness.dimensions 数组必须恰好包含6个条目
 11. projectAnalysis 数组必须为简历中的每个项目都生成分析条目

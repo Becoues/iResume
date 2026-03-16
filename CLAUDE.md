@@ -59,4 +59,4 @@ npx prisma generate  # Regenerate Prisma client (auto-runs on npm install)
 - Detail page (`/resumes/[id]`): ~2000 lines — all 10 analysis modules rendered in this single file.
 
 ### Analysis Modules (10 sections)
-JD key points, candidate profile, four-layer architecture scoring (4×5=20 max), DNA fitness (6×5=30 max), capability matrix, claims audit, project deep analysis, assessment framework, 20 technical questions (7 basic + 7 intermediate + 6 expert), 9 algorithm questions (3 easy + 3 medium + 3 hard), score card (0-100).
+JD key points, candidate profile, four-layer architecture scoring (4×5=20 max), DNA fitness (6×5=30 max), capability matrix, claims audit, project deep analysis, assessment framework, 15 technical questions (5 basic + 5 intermediate + 5 expert), 9 algorithm questions (3 easy + 3 medium + 3 hard), score card (0-100).
