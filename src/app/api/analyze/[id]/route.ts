@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { streamCompletion } from "@/lib/openai";
 import { buildAnalysisPrompt } from "@/lib/prompt";
+import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
 
@@ -78,22 +79,7 @@ export async function POST(
       // ---------------------------------------------------------------
       let analysis: ResumeAnalysis;
       try {
-        // Clean up the LLM output to extract valid JSON:
-        // 1. Strip markdown code fences if present
-        // 2. Extract the JSON object from any surrounding text
-        let cleaned = accumulated
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```\s*$/, "")
-          .trim();
-
-        // If the response doesn't start with '{', try to find the JSON object
-        const jsonStart = cleaned.indexOf("{");
-        const jsonEnd = cleaned.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
-        }
-
-        analysis = JSON.parse(cleaned) as ResumeAnalysis;
+        analysis = extractAndParseJSON(accumulated) as ResumeAnalysis;
 
         // Post-process: recalculate scores from sub-scores to spread distribution
         postProcessScores(analysis);

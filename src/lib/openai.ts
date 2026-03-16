@@ -61,6 +61,7 @@ export async function* streamCompletion(
     model: config.model,
     max_completion_tokens: 65536,
     stream: true,
+    response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
