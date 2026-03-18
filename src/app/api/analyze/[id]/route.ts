@@ -9,7 +9,8 @@ import { postProcessScores } from "@/lib/score-utils";
 /**
  * POST /api/analyze/[id]
  *
- * Runs selected analysis modules in parallel.
+ * Runs selected analysis modules in parallel (max 3 concurrent to avoid
+ * provider rate limits).
  *
  * Request body (optional):
  *   { modules?: number[] }   — IDs of modules to run (default: all)
@@ -22,6 +23,31 @@ import { postProcessScores } from "@/lib/score-utils";
  * Status transitions:
  *   uploaded | failed | completed  ->  analyzing  ->  completed | failed
  */
+
+const MAX_CONCURRENCY = 3;
+
+/** Run async tasks with a concurrency limit */
+async function runWithConcurrency<T>(
+  fns: (() => Promise<T>)[],
+  limit: number,
+): Promise<T[]> {
+  const results: T[] = new Array(fns.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < fns.length) {
+      const i = nextIndex++;
+      results[i] = await fns[i]();
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(limit, fns.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -98,15 +124,15 @@ export async function POST(
     try {
       await writer.write(encoder.encode(`data: [STARTED]\n\n`));
 
-      const results = await Promise.all(
-        tasks.map(({ module: mod, prompt }) =>
-          completion(prompt.system, prompt.user).then(async (raw) => {
-            await writer.write(
-              encoder.encode(`data: [DONE:${mod.key}]\n\n`)
-            );
-            return { key: mod.key, outputKeys: mod.outputKeys, raw };
-          })
-        )
+      const results = await runWithConcurrency(
+        tasks.map(({ module: mod, prompt }) => async () => {
+          const raw = await completion(prompt.system, prompt.user);
+          await writer.write(
+            encoder.encode(`data: [DONE:${mod.key}]\n\n`)
+          );
+          return { key: mod.key, outputKeys: mod.outputKeys, raw };
+        }),
+        MAX_CONCURRENCY,
       );
 
       // =================================================================
