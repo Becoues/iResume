@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { streamCompletion } from "@/lib/openai";
+import { completion } from "@/lib/openai";
 import { buildAnalysisPrompt, buildQuestionsPrompt } from "@/lib/prompt";
 import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
@@ -76,27 +76,23 @@ export async function POST(
       // =================================================================
       await writer.write(encoder.encode(`data: [PHASE:1]\n\n`));
 
-      let phase1Accumulated = "";
-      for await (const content of streamCompletion(
+      const phase1Result = await completion(
         analysisPrompt.system,
         analysisPrompt.user
-      )) {
-        phase1Accumulated += content;
-        // Don't send raw JSON chunks to client — just progress markers
-      }
+      );
 
       let analysis: Partial<ResumeAnalysis>;
       try {
-        analysis = extractAndParseJSON(phase1Accumulated) as Partial<ResumeAnalysis>;
+        analysis = extractAndParseJSON(phase1Result) as Partial<ResumeAnalysis>;
       } catch (parseErr) {
         console.error(`Phase 1 JSON parse failed for resume ${params.id}:`, parseErr);
-        console.error(`Raw output length: ${phase1Accumulated.length}, last 200 chars: ${phase1Accumulated.slice(-200)}`);
+        console.error(`Raw output length: ${phase1Result.length}, last 200 chars: ${phase1Result.slice(-200)}`);
         await prisma.resume.update({
           where: { id: params.id },
           data: {
             status: "failed",
             errorMessage: "Phase 1: LLM response was not valid JSON.",
-            analysisJson: phase1Accumulated,
+            analysisJson: phase1Result,
           },
         });
         await writer.write(
@@ -118,16 +114,13 @@ export async function POST(
         resume.filename
       );
 
-      let phase2Accumulated = "";
-      for await (const content of streamCompletion(
+      const phase2Result = await completion(
         questionsPrompt.system,
         questionsPrompt.user
-      )) {
-        phase2Accumulated += content;
-      }
+      );
 
       try {
-        const questions = extractAndParseJSON(phase2Accumulated) as {
+        const questions = extractAndParseJSON(phase2Result) as {
           technicalQuestions?: unknown[];
           algorithmQuestions?: unknown[];
         };

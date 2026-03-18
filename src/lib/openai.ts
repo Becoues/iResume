@@ -38,7 +38,39 @@ async function getConfig(): Promise<LLMConfig> {
 }
 
 // ---------------------------------------------------------------------------
-// LLM completion — streaming, yields chunks as they arrive
+// LLM completion — non-streaming, returns full response
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends a chat completion request and returns the full response text.
+ * More efficient than streaming when the caller doesn't need real-time chunks.
+ */
+export async function completion(
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
+  const config = await getConfig();
+
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+  });
+
+  const response = await client.chat.completions.create({
+    model: config.model,
+    stream: false,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+  });
+
+  return response.choices[0]?.message?.content ?? "";
+}
+
+// ---------------------------------------------------------------------------
+// LLM completion — streaming (kept for backward compatibility)
 // ---------------------------------------------------------------------------
 
 /**
@@ -59,7 +91,6 @@ export async function* streamCompletion(
 
   const stream = await client.chat.completions.create({
     model: config.model,
-    max_completion_tokens: 131072,
     stream: true,
     response_format: { type: "json_object" },
     messages: [
