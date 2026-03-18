@@ -358,7 +358,8 @@ export default function ResumePage({
   // Streaming state
   const [streamText, setStreamText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisPhase, setAnalysisPhase] = useState(0); // 0=not started, 1=core analysis, 2=questions
+  const [analysisPhase, setAnalysisPhase] = useState(0); // 0=not started, 1/2/3=which steps done (bitmask-like tracking)
+  const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set()); // tracks which of the 3 steps are done
   const streamRef = useRef<HTMLPreElement>(null);
 
   // Active section for sidebar navigation
@@ -638,6 +639,7 @@ export default function ResumePage({
     setAnalyzing(true);
     setStreamText("");
     setAnalysisPhase(1);
+    setDoneSteps(new Set());
     try {
       const res = await fetch(`/api/analyze/${id}`, { method: "POST" });
       if (!res.ok) throw new Error("Analysis request failed");
@@ -650,9 +652,15 @@ export default function ResumePage({
         done = d;
         if (value) {
           const text = decoder.decode(value, { stream: true });
-          // Parse SSE phase markers
-          if (text.includes("[PHASE:2]")) {
-            setAnalysisPhase(2);
+          // Parse SSE completion markers
+          if (text.includes("[DONE:1]")) {
+            setDoneSteps((prev) => new Set(prev).add(1));
+          }
+          if (text.includes("[DONE:2]")) {
+            setDoneSteps((prev) => new Set(prev).add(2));
+          }
+          if (text.includes("[DONE:3]")) {
+            setDoneSteps((prev) => new Set(prev).add(3));
           }
           setStreamText((prev) => prev + text);
         }
@@ -664,6 +672,7 @@ export default function ResumePage({
     } finally {
       setAnalyzing(false);
       setAnalysisPhase(0);
+      setDoneSteps(new Set());
     }
   }, [id, fetchResume]);
 
@@ -738,11 +747,16 @@ export default function ResumePage({
   // Render: Analyzing state (streaming)
   // -----------------------------------------------------------------------
   if (isAnalyzing) {
-    const phase = analyzing ? analysisPhase : 0; // 0 = polling (came back from another page)
+    const isActivelyAnalyzing = analyzing && analysisPhase > 0;
+    const completedCount = doneSteps.size;
     const steps = [
-      { label: "简历深度分析", desc: "评估四层架构、DNA维度、项目分析、声明审计等", phase: 1 },
-      { label: "生成面试题库", desc: "生成15道技术题和9道算法题", phase: 2 },
+      { id: 1, label: "简历深度分析", desc: "评估四层架构、DNA维度、项目分析、声明审计等" },
+      { id: 2, label: "生成技术面试题", desc: "生成15道技术面试题（基础/中级/专家）" },
+      { id: 3, label: "生成算法题", desc: "生成9道算法题（简单/中等/困难）" },
     ];
+    const progressPct = isActivelyAnalyzing
+      ? Math.min(10 + (completedCount / 3) * 85, 95)
+      : 50;
 
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -756,10 +770,12 @@ export default function ResumePage({
             </div>
             <div>
               <h2 className="text-lg font-bold text-foreground">
-                {phase === 0 ? "分析进行中..." : "AI 正在分析简历"}
+                {!isActivelyAnalyzing ? "分析进行中..." : "AI 正在并行分析简历"}
               </h2>
               <p className="text-sm text-muted-foreground">
-                {phase === 0 ? "请稍候，分析完成后将自动刷新" : "请耐心等待，分析完成后自动展示结果"}
+                {!isActivelyAnalyzing
+                  ? "请稍候，分析完成后将自动刷新"
+                  : `三项任务并行处理中，已完成 ${completedCount}/3`}
               </p>
             </div>
           </div>
@@ -769,40 +785,35 @@ export default function ResumePage({
             <div
               className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500 transition-all duration-1000 ease-out"
               style={{
-                width: phase === 0 ? "50%" : phase === 1 ? "40%" : "80%",
-                animation: "pulse 2s ease-in-out infinite",
+                width: `${progressPct}%`,
+                animation: completedCount < 3 ? "pulse 2s ease-in-out infinite" : "none",
               }}
             />
           </div>
 
           {/* Steps */}
-          {phase > 0 && (
-            <div className="space-y-4">
+          {isActivelyAnalyzing && (
+            <div className="space-y-3">
               {steps.map((step) => {
-                const isActive = step.phase === phase;
-                const isDone = step.phase < phase;
+                const isDone = doneSteps.has(step.id);
                 return (
                   <div
-                    key={step.phase}
+                    key={step.id}
                     className={`flex items-start gap-4 rounded-xl p-4 transition-all ${
-                      isActive
-                        ? "bg-white shadow-sm border border-violet-100"
-                        : isDone
+                      isDone
                         ? "bg-white/50"
-                        : "opacity-40"
+                        : "bg-white shadow-sm border border-violet-100"
                     }`}
                   >
                     <div className="mt-0.5">
                       {isDone ? (
                         <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-                      ) : isActive ? (
-                        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
                       ) : (
-                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
+                        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
                       )}
                     </div>
                     <div>
-                      <p className={`font-semibold ${isActive ? "text-violet-700" : isDone ? "text-emerald-700" : "text-muted-foreground"}`}>
+                      <p className={`font-semibold ${isDone ? "text-emerald-700" : "text-violet-700"}`}>
                         {step.label}
                       </p>
                       <p className="text-sm text-muted-foreground mt-0.5">

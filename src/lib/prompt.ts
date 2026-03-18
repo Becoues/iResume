@@ -5,9 +5,10 @@
  * structured resume analysis following the "DNA x Four-Layer Architecture"
  * evaluation framework.
  *
- * Split into two phases:
- *   Phase 1: Core analysis (profile, scoring, audit, projects, scoreCard)
- *   Phase 2: Question generation (technical + algorithm questions)
+ * Three independent prompts (can run in parallel):
+ *   1. Core analysis (profile, scoring, audit, projects, scoreCard)
+ *   2. Technical question generation (15 questions)
+ *   3. Algorithm question generation (9 questions)
  */
 
 // ---------------------------------------------------------------------------
@@ -24,14 +25,23 @@ export function buildAnalysisPrompt(
   return { system, user };
 }
 
-export function buildQuestionsPrompt(
+export function buildTechnicalQuestionsPrompt(
   pdfText: string,
-  analysisJson: string,
   jdText?: string,
   filename?: string,
 ): { system: string; user: string } {
-  const system = buildQuestionsSystemPrompt();
-  const user = buildQuestionsUserMessage(pdfText, analysisJson, jdText, filename);
+  const system = buildTechnicalQuestionsSystemPrompt();
+  const user = buildQuestionsUserMessage(pdfText, jdText, filename);
+  return { system, user };
+}
+
+export function buildAlgorithmQuestionsPrompt(
+  pdfText: string,
+  jdText?: string,
+  filename?: string,
+): { system: string; user: string } {
+  const system = buildAlgorithmQuestionsSystemPrompt();
+  const user = buildQuestionsUserMessage(pdfText, jdText, filename);
   return { system, user };
 }
 
@@ -261,15 +271,15 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: Questions generation system prompt
+// Phase 2: Technical questions system prompt
 // ---------------------------------------------------------------------------
 
-function buildQuestionsSystemPrompt(): string {
-  return `你是一位资深技术面试官，擅长根据候选人简历和分析结果设计高质量的面试题目。
+function buildTechnicalQuestionsSystemPrompt(): string {
+  return `你是一位资深技术面试官，擅长根据候选人简历设计高质量的技术面试题目。
 
 # 任务
 
-根据提供的候选人简历内容和已完成的分析结果，生成技术面试题和算法题。
+根据提供的候选人简历内容，生成针对性的技术面试问题。
 
 ## 技术问题库（technicalQuestions）
 必须生成恰好15个技术面试问题，按难度分三档：
@@ -292,6 +302,37 @@ function buildQuestionsSystemPrompt(): string {
 - 中级题考察"是否解决过实际问题"
 - 专家题考察"是否能设计系统级方案"
 - 每个问题都应该能区分"背答案"和"真正理解"
+
+# 输出要求
+
+1. 你的输出必须是且仅是一个合法的JSON对象
+2. 不要包含任何markdown代码围栏
+3. 不要在JSON前后添加任何解释性文字
+4. 所有字符串值中的双引号必须正确转义
+5. 所有字符串值中不得包含换行符，使用空格代替
+6. technicalQuestions 数组必须恰好包含15个条目
+
+# JSON输出结构
+
+{
+  "technicalQuestions": [
+    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": ["..."], "followUp": "..." }
+  ]
+}
+
+请记住：只输出JSON，不要输出任何其他内容。`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: Algorithm questions system prompt
+// ---------------------------------------------------------------------------
+
+function buildAlgorithmQuestionsSystemPrompt(): string {
+  return `你是一位资深技术面试官，擅长根据候选人简历设计高质量的算法面试题目。
+
+# 任务
+
+根据提供的候选人简历内容，生成与候选人技术方向相关的算法题。
 
 ## 相关算法题（algorithmQuestions）
 必须生成恰好9道算法题，按三个难度等级各3道：
@@ -323,15 +364,11 @@ function buildQuestionsSystemPrompt(): string {
 3. 不要在JSON前后添加任何解释性文字
 4. 所有字符串值中的双引号必须正确转义
 5. 所有字符串值中不得包含换行符，使用空格代替
-6. technicalQuestions 数组必须恰好包含15个条目
-7. algorithmQuestions 数组必须恰好包含9个条目（每个难度3道）
+6. algorithmQuestions 数组必须恰好包含9个条目（每个难度3道）
 
 # JSON输出结构
 
 {
-  "technicalQuestions": [
-    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": ["..."], "followUp": "..." }
-  ],
   "algorithmQuestions": [
     { "id": 1, "difficulty": "easy|medium|hard", "problem": "...", "testCases": ["输入: ... 输出: ..."], "examPoints": "...", "solutionApproach": "...", "followUp": "..." }
   ]
@@ -388,12 +425,12 @@ function buildUserMessage(pdfText: string, jdText?: string, filename?: string): 
   return parts.join("\n");
 }
 
-function buildQuestionsUserMessage(pdfText: string, analysisJson: string, jdText?: string, filename?: string): string {
+function buildQuestionsUserMessage(pdfText: string, jdText?: string, filename?: string): string {
   const parts: string[] = [];
 
   parts.push(`当前时间（北京时间）：${getBeijingTime()}`);
   parts.push("");
-  parts.push("请根据以下候选人简历和已完成的分析结果，生成针对性的技术面试题和算法题。");
+  parts.push("请根据以下候选人简历内容，生成针对性的面试题。");
 
   if (filename) {
     parts.push("");
@@ -410,10 +447,6 @@ function buildQuestionsUserMessage(pdfText: string, analysisJson: string, jdText
     parts.push("=== 岗位JD ===");
     parts.push(jdText.trim());
   }
-
-  parts.push("");
-  parts.push("=== 已完成的分析结果 ===");
-  parts.push(analysisJson);
 
   return parts.join("\n");
 }
