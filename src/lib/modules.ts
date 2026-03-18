@@ -22,6 +22,6 @@ export const ANALYSIS_MODULES: AnalysisModule[] = [
   { id: 5, key: "projectAnalysis", label: "项目解析", desc: "逐项目深度分析", icon: "🔀", required: false, outputKeys: ["projectAnalysis"] },
   { id: 6, key: "assessmentFramework", label: "考察框架", desc: "权重/优势/风险/验证点", icon: "📐", required: false, outputKeys: ["assessmentFramework"] },
   { id: 7, key: "technicalQuestions", label: "技术问题", desc: "15道技术面试题", icon: "❓", required: false, outputKeys: ["technicalQuestions"] },
-  { id: 8, key: "algorithmQuestions", label: "算法题", desc: "9道算法题", icon: "💻", required: false, outputKeys: ["algorithmQuestions"] },
+  { id: 8, key: "algorithmQuestions", label: "算法题", desc: "6道算法题", icon: "💻", required: false, outputKeys: ["algorithmQuestions"] },
   { id: 9, key: "keyObservations", label: "关键观察", desc: "多维度关键发现", icon: "👁️", required: false, outputKeys: ["keyObservations"] },
 ];
