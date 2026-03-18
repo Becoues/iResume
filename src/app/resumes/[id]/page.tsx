@@ -358,6 +358,7 @@ export default function ResumePage({
   // Streaming state
   const [streamText, setStreamText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisPhase, setAnalysisPhase] = useState(0); // 0=not started, 1=core analysis, 2=questions
   const streamRef = useRef<HTMLPreElement>(null);
 
   // Active section for sidebar navigation
@@ -609,12 +610,34 @@ export default function ResumePage({
     }
   }, [streamText]);
 
+  // Poll for completion when status is "analyzing" but we're not the ones streaming
+  useEffect(() => {
+    if (resume?.status === "analyzing" && !analyzing) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/resumes/${id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status !== "analyzing") {
+              setResume(data);
+              clearInterval(interval);
+            }
+          }
+        } catch {
+          // silent
+        }
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [resume?.status, analyzing, id]);
+
   // -----------------------------------------------------------------------
   // Start analysis (streaming)
   // -----------------------------------------------------------------------
   const startAnalysis = useCallback(async () => {
     setAnalyzing(true);
     setStreamText("");
+    setAnalysisPhase(1);
     try {
       const res = await fetch(`/api/analyze/${id}`, { method: "POST" });
       if (!res.ok) throw new Error("Analysis request failed");
@@ -626,7 +649,12 @@ export default function ResumePage({
         const { value, done: d } = await reader.read();
         done = d;
         if (value) {
-          setStreamText((prev) => prev + decoder.decode(value, { stream: true }));
+          const text = decoder.decode(value, { stream: true });
+          // Parse SSE phase markers
+          if (text.includes("[PHASE:2]")) {
+            setAnalysisPhase(2);
+          }
+          setStreamText((prev) => prev + text);
         }
       }
       // Refetch to get structured analysis
@@ -635,6 +663,7 @@ export default function ResumePage({
       setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setAnalyzing(false);
+      setAnalysisPhase(0);
     }
   }, [id, fetchResume]);
 
@@ -709,26 +738,82 @@ export default function ResumePage({
   // Render: Analyzing state (streaming)
   // -----------------------------------------------------------------------
   if (isAnalyzing) {
+    const phase = analyzing ? analysisPhase : 0; // 0 = polling (came back from another page)
+    const steps = [
+      { label: "简历深度分析", desc: "评估四层架构、DNA维度、项目分析、声明审计等", phase: 1 },
+      { label: "生成面试题库", desc: "生成15道技术题和9道算法题", phase: 2 },
+    ];
+
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
         <ResumeHeader resume={resume} />
-        <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/50 to-blue-50/50 p-6 space-y-4">
+        <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-blue-50/80 p-8 space-y-8">
+          {/* Header */}
           <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
-            <span className="font-semibold text-violet-700">
-              正在分析简历...
-            </span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 shadow-lg shadow-violet-500/20">
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground">
+                {phase === 0 ? "分析进行中..." : "AI 正在分析简历"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {phase === 0 ? "请稍候，分析完成后将自动刷新" : "请耐心等待，分析完成后自动展示结果"}
+              </p>
+            </div>
           </div>
-          <div className="w-full h-1.5 rounded-full bg-violet-100 overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500 animate-pulse w-2/3" />
+
+          {/* Progress bar */}
+          <div className="w-full h-2 rounded-full bg-violet-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500 transition-all duration-1000 ease-out"
+              style={{
+                width: phase === 0 ? "50%" : phase === 1 ? "40%" : "80%",
+                animation: "pulse 2s ease-in-out infinite",
+              }}
+            />
           </div>
-          <pre
-            ref={streamRef}
-            className="max-h-[60vh] overflow-y-auto rounded-lg bg-gray-950 p-4 text-sm text-emerald-400 font-mono leading-relaxed whitespace-pre-wrap break-words"
-          >
-            {streamText || "等待分析开始..."}
-          </pre>
+
+          {/* Steps */}
+          {phase > 0 && (
+            <div className="space-y-4">
+              {steps.map((step) => {
+                const isActive = step.phase === phase;
+                const isDone = step.phase < phase;
+                return (
+                  <div
+                    key={step.phase}
+                    className={`flex items-start gap-4 rounded-xl p-4 transition-all ${
+                      isActive
+                        ? "bg-white shadow-sm border border-violet-100"
+                        : isDone
+                        ? "bg-white/50"
+                        : "opacity-40"
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      {isDone ? (
+                        <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+                      ) : isActive ? (
+                        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
+                      ) : (
+                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className={`font-semibold ${isActive ? "text-violet-700" : isDone ? "text-emerald-700" : "text-muted-foreground"}`}>
+                        {step.label}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        {step.desc}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );

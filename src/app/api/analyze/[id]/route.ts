@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { streamCompletion } from "@/lib/openai";
-import { buildAnalysisPrompt } from "@/lib/prompt";
+import { buildAnalysisPrompt, buildQuestionsPrompt } from "@/lib/prompt";
 import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
@@ -8,10 +8,14 @@ import { postProcessScores } from "@/lib/score-utils";
 /**
  * POST /api/analyze/[id]
  *
- * Streaming analysis endpoint. Sends the resume text (and optional JD)
- * to the LLM via OpenAI-compatible streaming, piping chunks to the
- * client in real time as text/event-stream. When the stream completes
- * the full response is parsed as JSON and persisted to the database.
+ * Two-phase streaming analysis endpoint:
+ *   Phase 1: Core analysis (profile, scoring, audit, projects, scoreCard)
+ *   Phase 2: Question generation (technical + algorithm questions)
+ *
+ * Sends phase markers via SSE so the client can show progress:
+ *   data: [PHASE:1]  — starting core analysis
+ *   data: [PHASE:2]  — starting question generation
+ *   data: [DONE]     — all phases complete
  *
  * Status transitions:
  *   uploaded | failed  ->  analyzing  ->  completed | failed
@@ -50,62 +54,100 @@ export async function POST(
   });
 
   // -----------------------------------------------------------------------
-  // 3. Build the prompt
+  // 3. Build prompts
   // -----------------------------------------------------------------------
-  const prompt = buildAnalysisPrompt(resume.pdfText, resume.jdText ?? undefined, resume.filename);
+  const analysisPrompt = buildAnalysisPrompt(
+    resume.pdfText,
+    resume.jdText ?? undefined,
+    resume.filename
+  );
 
   // -----------------------------------------------------------------------
-  // 4 & 5. Stream the LLM response to the client via TransformStream
+  // 4. Stream both phases via TransformStream
   // -----------------------------------------------------------------------
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
-  // Fire-and-forget: run the streaming completion in the background so the
-  // Response can be returned immediately.
   (async () => {
-    let accumulated = "";
-
     try {
-      for await (const content of streamCompletion(prompt.system, prompt.user)) {
-        accumulated += content;
-        await writer.write(
-          encoder.encode(`data: ${JSON.stringify(content)}\n\n`)
-        );
+      // =================================================================
+      // Phase 1: Core analysis
+      // =================================================================
+      await writer.write(encoder.encode(`data: [PHASE:1]\n\n`));
+
+      let phase1Accumulated = "";
+      for await (const content of streamCompletion(
+        analysisPrompt.system,
+        analysisPrompt.user
+      )) {
+        phase1Accumulated += content;
+        // Don't send raw JSON chunks to client — just progress markers
       }
 
-      // ---------------------------------------------------------------
-      // 6 & 7. Parse the accumulated response and persist
-      // ---------------------------------------------------------------
-      let analysis: ResumeAnalysis;
+      let analysis: Partial<ResumeAnalysis>;
       try {
-        analysis = extractAndParseJSON(accumulated) as ResumeAnalysis;
-
-        // Post-process: recalculate scores from sub-scores to spread distribution
-        postProcessScores(analysis);
+        analysis = extractAndParseJSON(phase1Accumulated) as Partial<ResumeAnalysis>;
       } catch (parseErr) {
-        console.error(`JSON parse failed for resume ${params.id}:`, parseErr);
-        console.error(`Raw output length: ${accumulated.length}, last 200 chars: ${accumulated.slice(-200)}`);
-        // If the LLM output is not valid JSON, store the raw text and
-        // mark as failed so the user can inspect what went wrong.
+        console.error(`Phase 1 JSON parse failed for resume ${params.id}:`, parseErr);
+        console.error(`Raw output length: ${phase1Accumulated.length}, last 200 chars: ${phase1Accumulated.slice(-200)}`);
         await prisma.resume.update({
           where: { id: params.id },
           data: {
             status: "failed",
-            errorMessage:
-              "LLM response was not valid JSON. Raw output saved in analysisJson.",
-            analysisJson: accumulated,
+            errorMessage: "Phase 1: LLM response was not valid JSON.",
+            analysisJson: phase1Accumulated,
           },
         });
-
         await writer.write(
-          encoder.encode(
-            `data: ${JSON.stringify("[ERROR] Failed to parse analysis JSON")}\n\n`
-          )
+          encoder.encode(`data: ${JSON.stringify("[ERROR] Phase 1 failed to parse JSON")}\n\n`)
         );
         await writer.close();
         return;
       }
+
+      // =================================================================
+      // Phase 2: Question generation
+      // =================================================================
+      await writer.write(encoder.encode(`data: [PHASE:2]\n\n`));
+
+      const questionsPrompt = buildQuestionsPrompt(
+        resume.pdfText,
+        JSON.stringify(analysis),
+        resume.jdText ?? undefined,
+        resume.filename
+      );
+
+      let phase2Accumulated = "";
+      for await (const content of streamCompletion(
+        questionsPrompt.system,
+        questionsPrompt.user
+      )) {
+        phase2Accumulated += content;
+      }
+
+      try {
+        const questions = extractAndParseJSON(phase2Accumulated) as {
+          technicalQuestions?: unknown[];
+          algorithmQuestions?: unknown[];
+        };
+        // Merge questions into main analysis
+        if (questions.technicalQuestions) {
+          (analysis as Record<string, unknown>).technicalQuestions = questions.technicalQuestions;
+        }
+        if (questions.algorithmQuestions) {
+          (analysis as Record<string, unknown>).algorithmQuestions = questions.algorithmQuestions;
+        }
+      } catch (parseErr) {
+        console.error(`Phase 2 JSON parse failed for resume ${params.id}:`, parseErr);
+        // Phase 2 failure is non-fatal — save what we have from phase 1
+        // with empty questions arrays
+      }
+
+      // =================================================================
+      // Post-process and persist
+      // =================================================================
+      postProcessScores(analysis as ResumeAnalysis);
 
       await prisma.resume.update({
         where: { id: params.id },
@@ -116,13 +158,9 @@ export async function POST(
         },
       });
 
-      // Signal completion to the client
       await writer.write(encoder.encode(`data: [DONE]\n\n`));
       await writer.close();
     } catch (error) {
-      // -----------------------------------------------------------------
-      // 8. On error, mark as failed
-      // -----------------------------------------------------------------
       const message =
         error instanceof Error ? error.message : "Unknown error during analysis";
 
@@ -138,19 +176,15 @@ export async function POST(
 
       try {
         await writer.write(
-          encoder.encode(
-            `data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`
-          )
+          encoder.encode(`data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`)
         );
         await writer.close();
       } catch {
-        // Writer may already be closed if the client disconnected.
         await writer.abort();
       }
     }
   })();
 
-  // Return the readable side of the TransformStream as the response body
   return new Response(readable, {
     headers: {
       "Content-Type": "text/event-stream",

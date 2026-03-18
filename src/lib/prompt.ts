@@ -3,8 +3,11 @@
  *
  * Builds the system and user prompts that instruct the LLM to perform
  * structured resume analysis following the "DNA x Four-Layer Architecture"
- * evaluation framework. The LLM is expected to return a single valid JSON
- * object conforming to the ResumeAnalysis schema.
+ * evaluation framework.
+ *
+ * Split into two phases:
+ *   Phase 1: Core analysis (profile, scoring, audit, projects, scoreCard)
+ *   Phase 2: Question generation (technical + algorithm questions)
  */
 
 // ---------------------------------------------------------------------------
@@ -21,8 +24,19 @@ export function buildAnalysisPrompt(
   return { system, user };
 }
 
+export function buildQuestionsPrompt(
+  pdfText: string,
+  analysisJson: string,
+  jdText?: string,
+  filename?: string,
+): { system: string; user: string } {
+  const system = buildQuestionsSystemPrompt();
+  const user = buildQuestionsUserMessage(pdfText, analysisJson, jdText, filename);
+  return { system, user };
+}
+
 // ---------------------------------------------------------------------------
-// System prompt (Chinese, as required by the evaluation framework)
+// Phase 1: Core analysis system prompt
 // ---------------------------------------------------------------------------
 
 function buildSystemPrompt(): string {
@@ -124,51 +138,6 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 - results: 对该项目整体评价
 - mustAskQuestions: 面试中必须追问的问题列表（至少2个）
 
-## 技术问题库（technicalQuestions）
-必须生成恰好15个技术面试问题，按难度分三档：
-
-- basic（基础级，ID: 1-5）：考察基本功和工程素养
-- intermediate（中级，ID: 6-10）：考察实战经验和问题解决能力
-- expert（专家级，ID: 11-15）：考察架构思维和深度技术理解
-
-每个问题必须包含：
-- id: 编号（1-15）
-- level: "basic" | "intermediate" | "expert"
-- question: 具体问题（结合候选人简历中的技术栈）
-- examPoint: 考察要点
-- expectedPoints: 期望候选人回答的关键点列表
-- followUp: 追问方向
-
-问题设计原则：
-- 必须与候选人简历中的技术栈紧密相关
-- 基础题考察"是否真的用过"而非"是否听说过"
-- 中级题考察"是否解决过实际问题"
-- 专家题考察"是否能设计系统级方案"
-- 每个问题都应该能区分"背答案"和"真正理解"
-
-## 相关算法题（algorithmQuestions）
-必须生成恰好9道算法题，按三个难度等级各3道：
-
-- easy（简单级，ID: 1-3）：考察基本数据结构与算法
-- medium（中等级，ID: 4-6）：考察中等复杂度的算法设计
-- hard（困难级，ID: 7-9）：考察高级算法与系统设计
-
-每道题必须包含：
-- id: 编号（1-9）
-- difficulty: "easy" | "medium" | "hard"
-- problem: 完整的题目描述（包含输入输出格式说明）
-- testCases: 测试样例数组，每个元素是一个完整的输入→输出样例字符串，至少2个
-- examPoints: 考察点（该题考察哪些知识点和能力）
-- solutionApproach: 解题思路（简要描述最优解法的核心思想）
-- followUp: 追问（面试官可以基于此题进一步追问的方向）
-
-算法题设计原则：
-- 必须与候选人简历中的技术方向和实际工作场景紧密相关
-- 如果候选人是数据方向（数据工程、数据分析、大数据等），必须包含至少2道SQL相关题目
-- 题目应覆盖候选人技术栈相关的典型算法场景
-- 简单题考察基本功，中等题考察问题分解能力，困难题考察系统性思维
-- 测试样例要具有代表性，覆盖边界情况
-
 ## 评估框架（assessmentFramework）
 - weights: 各评估维度的权重分配及原因，至少包含4个维度
 - topStrengths: 候选人最突出的3个优势
@@ -204,11 +173,9 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 6. 确保JSON可以被标准JSON解析器直接解析
 7. 所有评分必须是整数
 8. claimsAudit 数组必须包含至少8个条目
-9. technicalQuestions 数组必须恰好包含15个条目
-10. algorithmQuestions 数组必须恰好包含9个条目（每个难度3道）
-10. dnaFitness.dimensions 数组必须恰好包含6个条目
-11. projectAnalysis 数组必须为简历中的每个项目都生成分析条目
-12. 所有 evidence 字段应尽量引用简历原文
+9. dnaFitness.dimensions 数组必须恰好包含6个条目
+10. projectAnalysis 数组必须为简历中的每个项目都生成分析条目
+11. 所有 evidence 字段应尽量引用简历原文
 
 # 关键：控制输出长度
 
@@ -223,6 +190,8 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 - 优先保证JSON结构完整，宁可内容简洁也不要输出被截断
 
 # JSON输出结构
+
+注意：本次只输出核心分析，不包含 technicalQuestions 和 algorithmQuestions（将在后续请求中单独生成）。
 
 你返回的JSON对象必须严格符合以下结构：
 {
@@ -274,12 +243,6 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
     "topRisks": ["..."],
     "topVerificationPoints": ["..."]
   },
-  "technicalQuestions": [
-    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": ["..."], "followUp": "..." }
-  ],
-  "algorithmQuestions": [
-    { "id": 1, "difficulty": "easy|medium|hard", "problem": "...", "testCases": ["输入: ... 输出: ..."], "examPoints": "...", "solutionApproach": "...", "followUp": "..." }
-  ],
   "keyObservations": [
     { "dimension": "...", "rating": "positive|neutral|negative", "detail": "..." }
   ],
@@ -298,7 +261,87 @@ capabilityMatrix 应基于候选人简历中体现的核心能力进行通用评
 }
 
 // ---------------------------------------------------------------------------
-// User message
+// Phase 2: Questions generation system prompt
+// ---------------------------------------------------------------------------
+
+function buildQuestionsSystemPrompt(): string {
+  return `你是一位资深技术面试官，擅长根据候选人简历和分析结果设计高质量的面试题目。
+
+# 任务
+
+根据提供的候选人简历内容和已完成的分析结果，生成技术面试题和算法题。
+
+## 技术问题库（technicalQuestions）
+必须生成恰好15个技术面试问题，按难度分三档：
+
+- basic（基础级，ID: 1-5）：考察基本功和工程素养
+- intermediate（中级，ID: 6-10）：考察实战经验和问题解决能力
+- expert（专家级，ID: 11-15）：考察架构思维和深度技术理解
+
+每个问题必须包含：
+- id: 编号（1-15）
+- level: "basic" | "intermediate" | "expert"
+- question: 具体问题（结合候选人简历中的技术栈）
+- examPoint: 考察要点
+- expectedPoints: 期望候选人回答的关键点列表
+- followUp: 追问方向
+
+问题设计原则：
+- 必须与候选人简历中的技术栈紧密相关
+- 基础题考察"是否真的用过"而非"是否听说过"
+- 中级题考察"是否解决过实际问题"
+- 专家题考察"是否能设计系统级方案"
+- 每个问题都应该能区分"背答案"和"真正理解"
+
+## 相关算法题（algorithmQuestions）
+必须生成恰好9道算法题，按三个难度等级各3道：
+
+- easy（简单级，ID: 1-3）：考察基本数据结构与算法
+- medium（中等级，ID: 4-6）：考察中等复杂度的算法设计
+- hard（困难级，ID: 7-9）：考察高级算法与系统设计
+
+每道题必须包含：
+- id: 编号（1-9）
+- difficulty: "easy" | "medium" | "hard"
+- problem: 完整的题目描述（包含输入输出格式说明）
+- testCases: 测试样例数组，每个元素是一个完整的输入→输出样例字符串，至少2个
+- examPoints: 考察点（该题考察哪些知识点和能力）
+- solutionApproach: 解题思路（简要描述最优解法的核心思想）
+- followUp: 追问（面试官可以基于此题进一步追问的方向）
+
+算法题设计原则：
+- 必须与候选人简历中的技术方向和实际工作场景紧密相关
+- 如果候选人是数据方向（数据工程、数据分析、大数据等），必须包含至少2道SQL相关题目
+- 题目应覆盖候选人技术栈相关的典型算法场景
+- 简单题考察基本功，中等题考察问题分解能力，困难题考察系统性思维
+- 测试样例要具有代表性，覆盖边界情况
+
+# 输出要求
+
+1. 你的输出必须是且仅是一个合法的JSON对象
+2. 不要包含任何markdown代码围栏
+3. 不要在JSON前后添加任何解释性文字
+4. 所有字符串值中的双引号必须正确转义
+5. 所有字符串值中不得包含换行符，使用空格代替
+6. technicalQuestions 数组必须恰好包含15个条目
+7. algorithmQuestions 数组必须恰好包含9个条目（每个难度3道）
+
+# JSON输出结构
+
+{
+  "technicalQuestions": [
+    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": ["..."], "followUp": "..." }
+  ],
+  "algorithmQuestions": [
+    { "id": 1, "difficulty": "easy|medium|hard", "problem": "...", "testCases": ["输入: ... 输出: ..."], "examPoints": "...", "solutionApproach": "...", "followUp": "..." }
+  ]
+}
+
+请记住：只输出JSON，不要输出任何其他内容。`;
+}
+
+// ---------------------------------------------------------------------------
+// User messages
 // ---------------------------------------------------------------------------
 
 function getBeijingTime(): string {
@@ -341,6 +384,36 @@ function buildUserMessage(pdfText: string, jdText?: string, filename?: string): 
     parts.push("");
     parts.push("请注意：未提供岗位JD，capabilityMatrix 应基于候选人核心能力进行通用评估。");
   }
+
+  return parts.join("\n");
+}
+
+function buildQuestionsUserMessage(pdfText: string, analysisJson: string, jdText?: string, filename?: string): string {
+  const parts: string[] = [];
+
+  parts.push(`当前时间（北京时间）：${getBeijingTime()}`);
+  parts.push("");
+  parts.push("请根据以下候选人简历和已完成的分析结果，生成针对性的技术面试题和算法题。");
+
+  if (filename) {
+    parts.push("");
+    parts.push(`=== PDF文件名 ===`);
+    parts.push(filename);
+  }
+
+  parts.push("");
+  parts.push("=== 简历内容 ===");
+  parts.push(pdfText.trim());
+
+  if (jdText) {
+    parts.push("");
+    parts.push("=== 岗位JD ===");
+    parts.push(jdText.trim());
+  }
+
+  parts.push("");
+  parts.push("=== 已完成的分析结果 ===");
+  parts.push(analysisJson);
 
   return parts.join("\n");
 }
