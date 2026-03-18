@@ -30,13 +30,25 @@ export function postProcessScores(analysis: ResumeAnalysis): void {
   }
 
   // --- 2. Recalculate finalScore from sub-totals ---
-  // Architecture (max 20) weighted 40%, DNA (max 30) weighted 30%,
-  // original LLM score weighted 30% (captures soft factors).
-  const archPct = sc.architectureTotal / 20; // 0-1
-  const dnaPct = sc.dnaTotal / 30;           // 0-1
-  const llmPct = sc.finalScore / 100;        // 0-1
+  // Weights: architecture 40%, DNA 30%, LLM qualitative 30%.
+  // If a module was not selected, redistribute its weight proportionally.
+  const hasArch = !!analysis.architectureScoring;
+  const hasDna = !!(analysis.dnaFitness?.dimensions?.length);
 
-  const rawScore = archPct * 0.4 + dnaPct * 0.3 + llmPct * 0.3;
+  let archWeight = hasArch ? 0.4 : 0;
+  let dnaWeight = hasDna ? 0.3 : 0;
+  let llmWeight = 0.3;
+  const totalWeight = archWeight + dnaWeight + llmWeight;
+  archWeight /= totalWeight;
+  dnaWeight /= totalWeight;
+  llmWeight /= totalWeight;
+
+  const archPct = hasArch ? sc.architectureTotal / 20 : 0; // 0-1
+  const dnaPct = hasDna ? sc.dnaTotal / 30 : 0;            // 0-1
+  const llmPct = sc.finalScore / 100;                       // 0-1
+
+  const rawScore =
+    archPct * archWeight + dnaPct * dnaWeight + llmPct * llmWeight;
 
   // --- 3. Spread the distribution ---
   // Apply a power curve centered at 0.5 to amplify differences.

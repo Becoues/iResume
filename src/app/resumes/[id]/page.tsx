@@ -37,6 +37,7 @@ import {
   Code,
   XCircle,
 } from "lucide-react";
+import { ANALYSIS_MODULES } from "@/lib/modules";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -358,8 +359,11 @@ export default function ResumePage({
   // Streaming state
   const [streamText, setStreamText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisPhase, setAnalysisPhase] = useState(0); // 0=not started, 1/2/3=which steps done (bitmask-like tracking)
-  const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set()); // tracks which of the 3 steps are done
+  const [analysisPhase, setAnalysisPhase] = useState(0);
+  const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set());
+  const [selectedModules, setSelectedModules] = useState<Set<number>>(
+    () => new Set(ANALYSIS_MODULES.map((m) => m.id))
+  );
   const streamRef = useRef<HTMLPreElement>(null);
 
   // Active section for sidebar navigation
@@ -641,7 +645,11 @@ export default function ResumePage({
     setAnalysisPhase(1);
     setDoneSteps(new Set());
     try {
-      const res = await fetch(`/api/analyze/${id}`, { method: "POST" });
+      const res = await fetch(`/api/analyze/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modules: Array.from(selectedModules) }),
+      });
       if (!res.ok) throw new Error("Analysis request failed");
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No stream body");
@@ -652,15 +660,10 @@ export default function ResumePage({
         done = d;
         if (value) {
           const text = decoder.decode(value, { stream: true });
-          // Parse SSE completion markers
-          if (text.includes("[DONE:1]")) {
-            setDoneSteps((prev) => new Set(prev).add(1));
-          }
-          if (text.includes("[DONE:2]")) {
-            setDoneSteps((prev) => new Set(prev).add(2));
-          }
-          if (text.includes("[DONE:3]")) {
-            setDoneSteps((prev) => new Set(prev).add(3));
+          // Parse SSE completion markers [DONE:moduleKey]
+          const matches = text.matchAll(/\[DONE:(\w+)\]/g);
+          for (const match of matches) {
+            setDoneSteps((prev) => new Set(prev).add(match[1]));
           }
           setStreamText((prev) => prev + text);
         }
@@ -674,7 +677,7 @@ export default function ResumePage({
       setAnalysisPhase(0);
       setDoneSteps(new Set());
     }
-  }, [id, fetchResume]);
+  }, [id, fetchResume, selectedModules]);
 
   // -----------------------------------------------------------------------
   // Loading / Error states
@@ -717,26 +720,81 @@ export default function ResumePage({
   // Render: Uploaded state
   // -----------------------------------------------------------------------
   if (isUploaded && !analyzing) {
+    const toggleModule = (id: number) => {
+      setSelectedModules((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+    const selectAll = () => setSelectedModules(new Set(ANALYSIS_MODULES.map((m) => m.id)));
+    const selectNone = () => setSelectedModules(new Set(ANALYSIS_MODULES.filter((m) => m.required).map((m) => m.id)));
+    const allSelected = selectedModules.size === ANALYSIS_MODULES.length;
+
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
         <ResumeHeader resume={resume} />
-        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-gradient-to-br from-violet-50 to-blue-50 py-20 gap-6">
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-gradient-to-br from-violet-50 to-blue-50 py-12 gap-6 px-6">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 shadow-lg shadow-violet-500/25">
             <Play className="h-9 w-9 text-white ml-1" />
           </div>
           <div className="text-center space-y-2">
             <h2 className="text-xl font-bold text-foreground">准备就绪</h2>
             <p className="text-muted-foreground text-sm max-w-md">
-              简历已成功上传，点击下方按钮开始 AI 深度分析
+              选择需要分析的模块，点击下方按钮开始 AI 深度分析
             </p>
           </div>
+
+          {/* Module selection grid */}
+          <div className="w-full max-w-2xl space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-sm font-medium text-muted-foreground">分析模块</span>
+              <button
+                onClick={allSelected ? selectNone : selectAll}
+                className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+              >
+                {allSelected ? "仅保留必选" : "全选"}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {ANALYSIS_MODULES.map((mod) => {
+                const checked = selectedModules.has(mod.id);
+                return (
+                  <label
+                    key={mod.id}
+                    className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-all select-none ${
+                      mod.required
+                        ? "border-violet-300 bg-violet-50/80 cursor-default"
+                        : checked
+                        ? "border-violet-300 bg-violet-50 hover:bg-violet-100"
+                        : "border-gray-200 bg-white/60 hover:bg-gray-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={mod.required}
+                      onChange={() => toggleModule(mod.id)}
+                      className="accent-violet-600 h-3.5 w-3.5"
+                    />
+                    <span>{mod.icon}</span>
+                    <span className={checked ? "text-foreground" : "text-muted-foreground"}>
+                      {mod.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           <button
             onClick={startAnalysis}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30 hover:from-violet-700 hover:to-blue-700 transition-all active:scale-[0.98]"
           >
             <Play className="h-5 w-5" />
-            开始分析
+            开始分析（{selectedModules.size} 个模块）
           </button>
         </div>
       </div>
@@ -748,14 +806,11 @@ export default function ResumePage({
   // -----------------------------------------------------------------------
   if (isAnalyzing) {
     const isActivelyAnalyzing = analyzing && analysisPhase > 0;
+    const activeModules = ANALYSIS_MODULES.filter((m) => selectedModules.has(m.id));
     const completedCount = doneSteps.size;
-    const steps = [
-      { id: 1, label: "简历深度分析", desc: "评估四层架构、DNA维度、项目分析、声明审计等" },
-      { id: 2, label: "生成技术面试题", desc: "生成15道技术面试题（基础/中级/专家）" },
-      { id: 3, label: "生成算法题", desc: "生成9道算法题（简单/中等/困难）" },
-    ];
+    const totalModules = activeModules.length;
     const progressPct = isActivelyAnalyzing
-      ? Math.min(10 + (completedCount / 3) * 85, 95)
+      ? Math.min(10 + (completedCount / totalModules) * 85, 95)
       : 50;
 
     return (
@@ -775,7 +830,7 @@ export default function ResumePage({
               <p className="text-sm text-muted-foreground">
                 {!isActivelyAnalyzing
                   ? "请稍候，分析完成后将自动刷新"
-                  : `三项任务并行处理中，已完成 ${completedCount}/3`}
+                  : `${totalModules} 项任务并行处理中，已完成 ${completedCount}/${totalModules}`}
               </p>
             </div>
           </div>
@@ -786,38 +841,35 @@ export default function ResumePage({
               className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500 transition-all duration-1000 ease-out"
               style={{
                 width: `${progressPct}%`,
-                animation: completedCount < 3 ? "pulse 2s ease-in-out infinite" : "none",
+                animation: completedCount < totalModules ? "pulse 2s ease-in-out infinite" : "none",
               }}
             />
           </div>
 
           {/* Steps */}
           {isActivelyAnalyzing && (
-            <div className="space-y-3">
-              {steps.map((step) => {
-                const isDone = doneSteps.has(step.id);
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {activeModules.map((mod) => {
+                const isDone = doneSteps.has(mod.key);
                 return (
                   <div
-                    key={step.id}
-                    className={`flex items-start gap-4 rounded-xl p-4 transition-all ${
+                    key={mod.key}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ${
                       isDone
                         ? "bg-white/50"
                         : "bg-white shadow-sm border border-violet-100"
                     }`}
                   >
-                    <div className="mt-0.5">
+                    <div className="flex-shrink-0">
                       {isDone ? (
-                        <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                       ) : (
-                        <Loader2 className="h-6 w-6 animate-spin text-violet-600" />
+                        <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
                       )}
                     </div>
-                    <div>
-                      <p className={`font-semibold ${isDone ? "text-emerald-700" : "text-violet-700"}`}>
-                        {step.label}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        {step.desc}
+                    <div className="min-w-0">
+                      <p className={`text-sm font-medium ${isDone ? "text-emerald-700" : "text-violet-700"}`}>
+                        {mod.icon} {mod.label}
                       </p>
                     </div>
                   </div>

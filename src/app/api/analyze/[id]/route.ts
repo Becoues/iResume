@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { completion } from "@/lib/openai";
-import { buildAnalysisPrompt, buildTechnicalQuestionsPrompt, buildAlgorithmQuestionsPrompt } from "@/lib/prompt";
+import { buildModulePrompt } from "@/lib/prompt";
+import { ANALYSIS_MODULES } from "@/lib/modules";
 import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
@@ -8,23 +9,21 @@ import { postProcessScores } from "@/lib/score-utils";
 /**
  * POST /api/analyze/[id]
  *
- * Three parallel LLM calls:
- *   1. Core analysis (profile, scoring, audit, projects, scoreCard)
- *   2. Technical question generation (15 questions)
- *   3. Algorithm question generation (9 questions)
+ * Runs selected analysis modules in parallel.
  *
- * Sends completion markers via SSE so the client can show progress:
- *   data: [STARTED]      — all three calls kicked off
- *   data: [DONE:1]       — core analysis complete
- *   data: [DONE:2]       — technical questions complete
- *   data: [DONE:3]       — algorithm questions complete
- *   data: [DONE]         — all phases complete, results persisted
+ * Request body (optional):
+ *   { modules?: number[] }   — IDs of modules to run (default: all)
+ *
+ * SSE markers:
+ *   data: [STARTED]           — all calls kicked off
+ *   data: [DONE:moduleKey]    — one module completed
+ *   data: [DONE]              — all modules done, results persisted
  *
  * Status transitions:
- *   uploaded | failed  ->  analyzing  ->  completed | failed
+ *   uploaded | failed | completed  ->  analyzing  ->  completed | failed
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   // -----------------------------------------------------------------------
@@ -49,7 +48,27 @@ export async function POST(
   }
 
   // -----------------------------------------------------------------------
-  // 2. Mark as analyzing
+  // 2. Parse selected modules from request body
+  // -----------------------------------------------------------------------
+  let selectedIds: number[];
+  try {
+    const body = await request.json();
+    selectedIds = Array.isArray(body.modules)
+      ? body.modules
+      : ANALYSIS_MODULES.map((m) => m.id);
+  } catch {
+    selectedIds = ANALYSIS_MODULES.map((m) => m.id);
+  }
+
+  // Always include module 0 (candidateProfile)
+  if (!selectedIds.includes(0)) selectedIds.unshift(0);
+
+  const selectedModules = ANALYSIS_MODULES.filter((m) =>
+    selectedIds.includes(m.id)
+  );
+
+  // -----------------------------------------------------------------------
+  // 3. Mark as analyzing
   // -----------------------------------------------------------------------
   await prisma.resume.update({
     where: { id: params.id },
@@ -57,18 +76,19 @@ export async function POST(
   });
 
   // -----------------------------------------------------------------------
-  // 3. Build all three prompts (no dependencies between them)
+  // 4. Build prompts for selected modules
   // -----------------------------------------------------------------------
   const pdfText = resume.pdfText;
   const jdText = resume.jdText ?? undefined;
   const filename = resume.filename;
 
-  const analysisPrompt = buildAnalysisPrompt(pdfText, jdText, filename);
-  const techQPrompt = buildTechnicalQuestionsPrompt(pdfText, jdText, filename);
-  const algoQPrompt = buildAlgorithmQuestionsPrompt(pdfText, jdText, filename);
+  const tasks = selectedModules.map((mod) => ({
+    module: mod,
+    prompt: buildModulePrompt(mod.key, pdfText, jdText, filename),
+  }));
 
   // -----------------------------------------------------------------------
-  // 4. Run all three in parallel, report progress via SSE
+  // 5. Run all in parallel, report progress via SSE
   // -----------------------------------------------------------------------
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -78,68 +98,73 @@ export async function POST(
     try {
       await writer.write(encoder.encode(`data: [STARTED]\n\n`));
 
-      // Launch all three LLM calls concurrently
-      const [phase1Result, phase2Result, phase3Result] = await Promise.all([
-        completion(analysisPrompt.system, analysisPrompt.user).then(async (r) => {
-          await writer.write(encoder.encode(`data: [DONE:1]\n\n`));
-          return r;
-        }),
-        completion(techQPrompt.system, techQPrompt.user).then(async (r) => {
-          await writer.write(encoder.encode(`data: [DONE:2]\n\n`));
-          return r;
-        }),
-        completion(algoQPrompt.system, algoQPrompt.user).then(async (r) => {
-          await writer.write(encoder.encode(`data: [DONE:3]\n\n`));
-          return r;
-        }),
-      ]);
+      const results = await Promise.all(
+        tasks.map(({ module: mod, prompt }) =>
+          completion(prompt.system, prompt.user).then(async (raw) => {
+            await writer.write(
+              encoder.encode(`data: [DONE:${mod.key}]\n\n`)
+            );
+            return { key: mod.key, outputKeys: mod.outputKeys, raw };
+          })
+        )
+      );
 
       // =================================================================
       // Parse and merge results
       // =================================================================
-      let analysis: Partial<ResumeAnalysis>;
-      try {
-        analysis = extractAndParseJSON(phase1Result) as Partial<ResumeAnalysis>;
-      } catch (parseErr) {
-        console.error(`Core analysis JSON parse failed for resume ${params.id}:`, parseErr);
-        console.error(`Raw output length: ${phase1Result.length}, last 200 chars: ${phase1Result.slice(-200)}`);
-        await prisma.resume.update({
-          where: { id: params.id },
-          data: {
-            status: "failed",
-            errorMessage: "核心分析: LLM 返回的不是合法 JSON",
-            analysisJson: phase1Result,
-          },
-        });
-        await writer.write(
-          encoder.encode(`data: ${JSON.stringify("[ERROR] Core analysis failed to parse JSON")}\n\n`)
-        );
+
+      // Start from existing analysis if re-analyzing
+      let analysis: Partial<ResumeAnalysis> = {};
+      if (resume.analysisJson) {
+        try {
+          analysis = JSON.parse(resume.analysisJson) as Partial<ResumeAnalysis>;
+        } catch {
+          // Start fresh if existing data is corrupt
+        }
+      }
+
+      let fatalError = false;
+
+      for (const result of results) {
+        try {
+          const parsed = extractAndParseJSON(result.raw) as Record<
+            string,
+            unknown
+          >;
+          for (const outKey of result.outputKeys) {
+            if (parsed[outKey] !== undefined) {
+              (analysis as Record<string, unknown>)[outKey] = parsed[outKey];
+            }
+          }
+        } catch (parseErr) {
+          console.error(
+            `Module ${result.key} JSON parse failed for resume ${params.id}:`,
+            parseErr
+          );
+
+          // Only candidateProfile (module 0) failure is fatal
+          if (result.key === "candidateProfile") {
+            fatalError = true;
+            await prisma.resume.update({
+              where: { id: params.id },
+              data: {
+                status: "failed",
+                errorMessage: `候选人档案模块解析失败: LLM 返回的不是合法 JSON`,
+                analysisJson: result.raw,
+              },
+            });
+            await writer.write(
+              encoder.encode(
+                `data: ${JSON.stringify("[ERROR] candidateProfile parse failed")}\n\n`
+              )
+            );
+          }
+        }
+      }
+
+      if (fatalError) {
         await writer.close();
         return;
-      }
-
-      // Merge technical questions (non-fatal if parse fails)
-      try {
-        const techQ = extractAndParseJSON(phase2Result) as {
-          technicalQuestions?: unknown[];
-        };
-        if (techQ.technicalQuestions) {
-          (analysis as Record<string, unknown>).technicalQuestions = techQ.technicalQuestions;
-        }
-      } catch (parseErr) {
-        console.error(`Technical questions JSON parse failed for resume ${params.id}:`, parseErr);
-      }
-
-      // Merge algorithm questions (non-fatal if parse fails)
-      try {
-        const algoQ = extractAndParseJSON(phase3Result) as {
-          algorithmQuestions?: unknown[];
-        };
-        if (algoQ.algorithmQuestions) {
-          (analysis as Record<string, unknown>).algorithmQuestions = algoQ.algorithmQuestions;
-        }
-      } catch (parseErr) {
-        console.error(`Algorithm questions JSON parse failed for resume ${params.id}:`, parseErr);
       }
 
       // =================================================================
@@ -160,7 +185,9 @@ export async function POST(
       await writer.close();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unknown error during analysis";
+        error instanceof Error
+          ? error.message
+          : "Unknown error during analysis";
 
       console.error(`POST /api/analyze/${params.id} error:`, error);
 
@@ -174,7 +201,9 @@ export async function POST(
 
       try {
         await writer.write(
-          encoder.encode(`data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`)
+          encoder.encode(
+            `data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`
+          )
         );
         await writer.close();
       } catch {
