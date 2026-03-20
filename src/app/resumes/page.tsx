@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
+  ArrowUpDown,
   FileText,
   Trash2,
   Clock,
@@ -11,7 +12,12 @@ import {
   AlertCircle,
   CheckCircle2,
   BarChart3,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +40,24 @@ interface ResumeListItem {
   levelMatch?: string | null;
   recommendation?: string | null;
 }
+
+type StatusFilter = "all" | "uploaded" | "analyzing" | "completed" | "failed";
+type RecommendationFilter =
+  | "all"
+  | "strong_recommend"
+  | "recommend"
+  | "cautious_recommend"
+  | "conditional"
+  | "not_recommend";
+type SortOption =
+  | "upload-desc"
+  | "upload-asc"
+  | "updated-desc"
+  | "updated-asc"
+  | "score-desc"
+  | "score-asc"
+  | "name-asc"
+  | "name-desc";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +106,53 @@ function getRecommendationStyle(rec: string | null): { label: string; className:
     },
   };
   return map[rec] || { label: rec, className: "bg-gray-50 text-gray-700 ring-1 ring-gray-500/20" };
+}
+
+function getResumeSearchText(resume: ResumeListItem): string {
+  return [
+    resume.candidateName,
+    resume.filename,
+    resume.techDirection,
+    resume.experienceYears,
+    resume.levelMatch,
+    resume.recommendation,
+    getRecommendationStyle(resume.recommendation ?? null)?.label,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getResumeDisplayName(resume: ResumeListItem): string {
+  return (resume.candidateName || resume.filename).trim().toLowerCase();
+}
+
+function getResumeScore(resume: ResumeListItem): number {
+  return resume.scoreCard?.finalScore ?? -1;
+}
+
+function getRecommendationLabel(value: RecommendationFilter | "all"): string {
+  if (value === "all") return "全部推荐结论";
+  return getRecommendationStyle(value)?.label ?? value;
+}
+
+function getStatusLabel(value: StatusFilter): string {
+  const map: Record<StatusFilter, string> = {
+    all: "全部状态",
+    uploaded: "已上传",
+    analyzing: "分析中",
+    completed: "已完成",
+    failed: "失败",
+  };
+  return map[value];
+}
+
+function matchesRecommendation(
+  resume: ResumeListItem,
+  recommendationFilter: RecommendationFilter
+): boolean {
+  if (recommendationFilter === "all") return true;
+  return resume.recommendation === recommendationFilter;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +302,12 @@ export default function ResumesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [recommendationFilter, setRecommendationFilter] =
+    useState<RecommendationFilter>("all");
+  const [techFilter, setTechFilter] = useState("all");
+  const [sortOption, setSortOption] = useState<SortOption>("upload-desc");
 
   const fetchResumes = async () => {
     setLoading(true);
@@ -252,6 +329,75 @@ export default function ResumesPage() {
   useEffect(() => {
     fetchResumes();
   }, []);
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const techOptions = Array.from(
+    new Set(
+      resumes
+        .map((resume) => resume.techDirection?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-CN"));
+
+  const filteredResumes = resumes.filter((resume) => {
+    const matchesSearch =
+      normalizedSearch.length === 0 ||
+      getResumeSearchText(resume).includes(normalizedSearch);
+    const matchesStatus =
+      statusFilter === "all" || resume.status === statusFilter;
+    const matchesTech =
+      techFilter === "all" || resume.techDirection?.trim() === techFilter;
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesRecommendation(resume, recommendationFilter) &&
+      matchesTech
+    );
+  });
+
+  const sortedResumes = [...filteredResumes].sort((a, b) => {
+    switch (sortOption) {
+      case "upload-asc":
+        return new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime();
+      case "updated-desc":
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      case "updated-asc":
+        return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      case "score-desc":
+        return getResumeScore(b) - getResumeScore(a);
+      case "score-asc":
+        return getResumeScore(a) - getResumeScore(b);
+      case "name-asc":
+        return getResumeDisplayName(a).localeCompare(
+          getResumeDisplayName(b),
+          "zh-CN"
+        );
+      case "name-desc":
+        return getResumeDisplayName(b).localeCompare(
+          getResumeDisplayName(a),
+          "zh-CN"
+        );
+      case "upload-desc":
+      default:
+        return new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime();
+    }
+  });
+
+  const hasActiveFilters =
+    normalizedSearch.length > 0 ||
+    statusFilter !== "all" ||
+    recommendationFilter !== "all" ||
+    techFilter !== "all" ||
+    sortOption !== "upload-desc";
+
+  const resetControls = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setRecommendationFilter("all");
+    setTechFilter("all");
+    setSortOption("upload-desc");
+  };
 
   const handleDelete = async (id: string, filename: string) => {
     const confirmed = window.confirm(
@@ -286,6 +432,12 @@ export default function ResumesPage() {
           {!loading && !error && (
             <p className="mt-1 text-sm text-muted-foreground">
               共 {resumes.length} 份简历
+              {resumes.length > 0 && (
+                <span>
+                  {" "}
+                  · 当前显示 {sortedResumes.length} 份
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -313,10 +465,150 @@ export default function ResumesPage() {
       {/* Empty state */}
       {!loading && !error && resumes.length === 0 && <EmptyState />}
 
+      {!loading && !error && resumes.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-card/80 p-4 shadow-sm">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索姓名、文件名、技术方向、推荐结论"
+                  className="pl-9"
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="flex min-w-[140px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+                  <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    className="h-10 w-full bg-transparent text-sm text-foreground focus:outline-none"
+                    aria-label="按状态筛选"
+                  >
+                    <option value="all">全部状态</option>
+                    <option value="uploaded">已上传</option>
+                    <option value="analyzing">分析中</option>
+                    <option value="completed">已完成</option>
+                    <option value="failed">失败</option>
+                  </select>
+                </label>
+
+                <label className="flex min-w-[160px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={recommendationFilter}
+                    onChange={(e) =>
+                      setRecommendationFilter(
+                        e.target.value as RecommendationFilter
+                      )
+                    }
+                    className="h-10 w-full bg-transparent text-sm text-foreground focus:outline-none"
+                    aria-label="按推荐结论筛选"
+                  >
+                    <option value="all">全部推荐结论</option>
+                    <option value="strong_recommend">强烈推荐</option>
+                    <option value="recommend">推荐</option>
+                    <option value="cautious_recommend">谨慎推荐</option>
+                    <option value="conditional">有条件推荐</option>
+                    <option value="not_recommend">不推荐</option>
+                  </select>
+                </label>
+
+                <label className="flex min-w-[160px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={techFilter}
+                    onChange={(e) => setTechFilter(e.target.value)}
+                    className="h-10 w-full bg-transparent text-sm text-foreground focus:outline-none"
+                    aria-label="按技术方向筛选"
+                  >
+                    <option value="all">全部技术方向</option>
+                    {techOptions.map((tech) => (
+                      <option key={tech} value={tech}>
+                        {tech}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex min-w-[170px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+                  <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={sortOption}
+                    onChange={(e) => setSortOption(e.target.value as SortOption)}
+                    className="h-10 w-full bg-transparent text-sm text-foreground focus:outline-none"
+                    aria-label="排序方式"
+                  >
+                    <option value="upload-desc">上传时间: 最新优先</option>
+                    <option value="upload-asc">上传时间: 最早优先</option>
+                    <option value="updated-desc">分析时间: 最新优先</option>
+                    <option value="updated-asc">分析时间: 最早优先</option>
+                    <option value="score-desc">综合评分: 高到低</option>
+                    <option value="score-asc">综合评分: 低到高</option>
+                    <option value="name-asc">姓名: A-Z</option>
+                    <option value="name-desc">姓名: Z-A</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="rounded-full bg-muted px-2.5 py-1">
+                  {getStatusLabel(statusFilter)}
+                </span>
+                <span className="rounded-full bg-muted px-2.5 py-1">
+                  {getRecommendationLabel(recommendationFilter)}
+                </span>
+                <span className="rounded-full bg-muted px-2.5 py-1">
+                  {techFilter === "all" ? "全部技术方向" : techFilter}
+                </span>
+                <span className="rounded-full bg-muted px-2.5 py-1">
+                  检索结果 {sortedResumes.length} / {resumes.length}
+                </span>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={resetControls}
+                disabled={!hasActiveFilters}
+                className="gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                清空条件
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && resumes.length > 0 && sortedResumes.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 px-6 py-14 text-center">
+          <p className="text-base font-semibold text-foreground">
+            没有找到符合条件的历史记录
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            可以调整搜索关键词或筛选条件，再试一次。
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={resetControls}
+            className="mt-4"
+          >
+            重置检索条件
+          </Button>
+        </div>
+      )}
+
       {/* Resume list */}
-      {!loading && resumes.length > 0 && (
+      {!loading && sortedResumes.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {resumes.map((resume) => {
+          {sortedResumes.map((resume) => {
             const isDeleting = deletingId === resume.id;
             const score = resume.scoreCard?.finalScore ?? null;
             const archTotal = resume.scoreCard?.architectureTotal ?? null;
