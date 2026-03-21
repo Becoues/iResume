@@ -714,8 +714,8 @@ export default function ResumesPage() {
                                 {resume.candidateName}
                               </p>
                               {resume.levelMatch && (
-                                <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600 ring-1 ring-indigo-500/20">
-                                  {resume.levelMatch}
+                                <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600 ring-1 ring-indigo-500/20 max-w-[15em] truncate" title={resume.levelMatch}>
+                                  {resume.levelMatch.length > 15 ? resume.levelMatch.slice(0, 15) + "…" : resume.levelMatch}
                                 </span>
                               )}
                             </div>
