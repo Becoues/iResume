@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { extractTextFromPdf } from "@/lib/pdf";
+import { autoDetectTag } from "@/lib/auto-tag";
 
 /**
  * GET /api/resumes
@@ -24,6 +25,9 @@ export async function GET() {
         tag: true,
       },
     });
+
+    // Backfill tags for resumes analyzed before auto-tag was added
+    const backfillPromises: Promise<void>[] = [];
 
     const summaries = resumes.map((resume) => {
       let scoreCard: {
@@ -55,6 +59,25 @@ export async function GET() {
         }
       }
 
+      // Auto-tag backfill: if analysis exists but no tag, detect and persist
+      let tag = resume.tag;
+      if (!tag && resume.analysisJson && levelMatch) {
+        const detected = autoDetectTag({
+          pdfText: "",
+          experienceYears,
+          levelMatch,
+        });
+        if (detected) {
+          tag = detected;
+          backfillPromises.push(
+            prisma.resume.update({
+              where: { id: resume.id },
+              data: { tag: detected },
+            }).then(() => {})
+          );
+        }
+      }
+
       return {
         id: resume.id,
         filename: resume.filename,
@@ -67,9 +90,16 @@ export async function GET() {
         experienceYears,
         levelMatch,
         recommendation,
-        tag: resume.tag,
+        tag,
       };
     });
+
+    // Fire-and-forget backfill writes
+    if (backfillPromises.length > 0) {
+      Promise.all(backfillPromises).catch((err) =>
+        console.error("Tag backfill failed:", err)
+      );
+    }
 
     return NextResponse.json(summaries);
   } catch (error) {
