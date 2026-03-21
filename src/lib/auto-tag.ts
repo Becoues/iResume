@@ -1,7 +1,10 @@
 /**
- * Auto-tag a resume as 校招 / 实习 / 社招 based on resume text and analysis data.
+ * Auto-tag a resume as 校招 / 实习 / 社招 based on LLM analysis and resume text.
  *
- * Priority: 实习 > 校招 > 社招 (default)
+ * Priority:
+ *   1. levelMatch field from LLM analysis (highest confidence)
+ *   2. Resume text keyword matching (fallback)
+ *   3. null if no match (user picks manually)
  */
 export type ResumeTag = "校招" | "实习" | "社招";
 
@@ -11,54 +14,34 @@ interface TagContext {
   levelMatch?: string | null;
 }
 
-const INTERN_KEYWORDS = [
-  "实习", "intern", "internship", "实习生", "暑期实习", "日常实习",
-  "寒假实习", "春招实习", "秋招实习",
-];
+export function autoDetectTag(ctx: TagContext): ResumeTag | null {
+  const level = ctx.levelMatch ?? "";
+  const exp = ctx.experienceYears ?? "";
 
-const CAMPUS_KEYWORDS = [
-  "应届", "校招", "校园招聘", "毕业", "在校", "在读",
-  "本科在读", "研究生在读", "硕士在读", "博士在读",
-  "campus", "fresh graduate", "new grad",
-  "预计毕业", "expected graduation",
-];
+  // ── Priority 1: LLM levelMatch field (most reliable) ──
+  if (/实习/.test(level)) return "实习";
+  if (/应届|校招/.test(level)) return "校招";
+  if (/社招|高级|资深|专家|架构师|总监/.test(level)) return "社招";
 
-export function autoDetectTag(ctx: TagContext): ResumeTag {
-  const text = ctx.pdfText.toLowerCase();
-  const exp = ctx.experienceYears?.toLowerCase() ?? "";
-  const level = ctx.levelMatch?.toLowerCase() ?? "";
+  // ── Priority 2: experienceYears field ──
+  if (/应届|0年?$/.test(exp)) return "校招";
+  const yearsNum = parseFloat(exp);
+  if (!isNaN(yearsNum) && yearsNum >= 2) return "社招";
 
-  // Check for intern signals
-  if (INTERN_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()))) {
-    return "实习";
-  }
-  if (level.includes("实习")) {
-    return "实习";
-  }
+  // ── Priority 3: Resume text keywords ──
+  const text = ctx.pdfText;
 
-  // Check for campus recruitment signals
-  if (CAMPUS_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()))) {
-    return "校招";
-  }
-  if (exp === "应届" || exp === "0" || exp === "0年") {
-    return "校招";
-  }
-  if (level.includes("应届") || level.includes("校招")) {
-    return "校招";
-  }
+  if (/实习生?|intern/i.test(text)) return "实习";
+  if (/应届|校招|校园招聘|在读|在校/.test(text)) return "校招";
 
-  // Check graduation year proximity (within 1 year of current)
+  // Check graduation year proximity
   const currentYear = new Date().getFullYear();
-  const gradYearMatch = ctx.pdfText.match(
-    /(?:预计|expected)?(?:毕业|graduation|graduating).*?(\d{4})/i
-  );
-  if (gradYearMatch) {
-    const gradYear = parseInt(gradYearMatch[1], 10);
-    if (gradYear >= currentYear && gradYear <= currentYear + 1) {
-      return "校招";
-    }
+  const gradMatch = text.match(/(?:预计|expected)?(?:毕业|graduation).*?(\d{4})/i);
+  if (gradMatch) {
+    const gradYear = parseInt(gradMatch[1], 10);
+    if (gradYear >= currentYear && gradYear <= currentYear + 1) return "校招";
   }
 
-  // Default: social recruitment
-  return "社招";
+  // No confident match → return null (user picks manually)
+  return null;
 }

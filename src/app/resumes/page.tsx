@@ -744,31 +744,26 @@ export default function ResumesPage() {
                     </div>
                   </div>
 
-                  {/* Tag badges */}
-                  <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.preventDefault()}>
-                    {TAG_OPTIONS.map((opt) => {
-                      const isActive = resume.tag === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleTagChange(
-                              resume.id,
-                              isActive ? "" : opt.value
-                            );
-                          }}
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-all ${
-                            isActive
-                              ? opt.className
-                              : "bg-gray-50 text-gray-400 ring-1 ring-gray-200 hover:bg-gray-100 hover:text-gray-600"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
+                  {/* Tag dropdown */}
+                  <div className="mt-2" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                    <select
+                      value={resume.tag ?? ""}
+                      onChange={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleTagChange(resume.id, e.target.value);
+                      }}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-500 ${
+                        resume.tag
+                          ? TAG_OPTIONS.find((t) => t.value === resume.tag)?.className ?? "bg-gray-100 text-gray-600"
+                          : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      <option value="">待选标签</option>
+                      {TAG_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Row 2: score ring + details + arrow */}
