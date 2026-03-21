@@ -5,6 +5,7 @@ import { ANALYSIS_MODULES } from "@/lib/modules";
 import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
+import { autoDetectTag } from "@/lib/auto-tag";
 
 /**
  * POST /api/analyze/[id]
@@ -198,12 +199,24 @@ export async function POST(
       // =================================================================
       postProcessScores(analysis as ResumeAnalysis);
 
+      // Auto-detect tag if not already set
+      const currentResume = await prisma.resume.findUnique({
+        where: { id: params.id },
+        select: { tag: true },
+      });
+      const tag = currentResume?.tag ?? autoDetectTag({
+        pdfText: resume.pdfText,
+        experienceYears: (analysis as Record<string, unknown> as { candidateProfile?: { experienceYears?: string } }).candidateProfile?.experienceYears,
+        levelMatch: (analysis as Record<string, unknown> as { candidateProfile?: { levelMatch?: string } }).candidateProfile?.levelMatch,
+      });
+
       await prisma.resume.update({
         where: { id: params.id },
         data: {
           analysisJson: JSON.stringify(analysis),
           status: "completed",
           errorMessage: null,
+          tag,
         },
       });
 

@@ -15,9 +15,11 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Tag,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { getPinyinVariants } from "@/lib/pinyin";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,7 +41,15 @@ interface ResumeListItem {
   experienceYears?: string | null;
   levelMatch?: string | null;
   recommendation?: string | null;
+  tag?: string | null;
 }
+
+type TagFilter = "all" | "校招" | "实习" | "社招" | "untagged";
+const TAG_OPTIONS: { value: string; label: string; className: string }[] = [
+  { value: "校招", label: "校招", className: "bg-blue-50 text-blue-700 ring-1 ring-blue-600/20" },
+  { value: "实习", label: "实习", className: "bg-orange-50 text-orange-700 ring-1 ring-orange-600/20" },
+  { value: "社招", label: "社招", className: "bg-purple-50 text-purple-700 ring-1 ring-purple-600/20" },
+];
 
 type StatusFilter = "all" | "uploaded" | "analyzing" | "completed" | "failed";
 type RecommendationFilter =
@@ -109,7 +119,7 @@ function getRecommendationStyle(rec: string | null): { label: string; className:
 }
 
 function getResumeSearchText(resume: ResumeListItem): string {
-  return [
+  const base = [
     resume.candidateName,
     resume.filename,
     resume.techDirection,
@@ -121,6 +131,13 @@ function getResumeSearchText(resume: ResumeListItem): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+  // Add pinyin variants for candidate name
+  const pinyinParts = resume.candidateName
+    ? getPinyinVariants(resume.candidateName)
+    : [];
+
+  return [base, ...pinyinParts].join(" ");
 }
 
 function getResumeDisplayName(resume: ResumeListItem): string {
@@ -307,6 +324,7 @@ export default function ResumesPage() {
   const [recommendationFilter, setRecommendationFilter] =
     useState<RecommendationFilter>("all");
   const [techFilter, setTechFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState<TagFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("upload-desc");
 
   const fetchResumes = async () => {
@@ -347,12 +365,16 @@ export default function ResumesPage() {
       statusFilter === "all" || resume.status === statusFilter;
     const matchesTech =
       techFilter === "all" || resume.techDirection?.trim() === techFilter;
+    const matchesTag =
+      tagFilter === "all" ||
+      (tagFilter === "untagged" ? !resume.tag : resume.tag === tagFilter);
 
     return (
       matchesSearch &&
       matchesStatus &&
       matchesRecommendation(resume, recommendationFilter) &&
-      matchesTech
+      matchesTech &&
+      matchesTag
     );
   });
 
@@ -389,6 +411,7 @@ export default function ResumesPage() {
     statusFilter !== "all" ||
     recommendationFilter !== "all" ||
     techFilter !== "all" ||
+    tagFilter !== "all" ||
     sortOption !== "upload-desc";
 
   const resetControls = () => {
@@ -396,7 +419,28 @@ export default function ResumesPage() {
     setStatusFilter("all");
     setRecommendationFilter("all");
     setTechFilter("all");
+    setTagFilter("all");
     setSortOption("upload-desc");
+  };
+
+  const handleTagChange = async (resumeId: string, newTag: string) => {
+    // Optimistic update
+    setResumes((prev) =>
+      prev.map((r) => (r.id === resumeId ? { ...r, tag: newTag } : r))
+    );
+    try {
+      const res = await fetch(`/api/resumes/${resumeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag: newTag }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        fetchResumes();
+      }
+    } catch {
+      fetchResumes();
+    }
   };
 
   const handleDelete = async (id: string, filename: string) => {
@@ -468,18 +512,34 @@ export default function ResumesPage() {
       {!loading && !error && resumes.length > 0 && (
         <div className="rounded-2xl border border-border/60 bg-card/80 p-4 shadow-sm">
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-3">
+              <div className="relative w-full">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索姓名、文件名、技术方向、推荐结论"
-                  className="pl-9"
+                  placeholder="搜索姓名、拼音、首字母缩写、文件名、技术方向、推荐结论"
+                  className="w-full pl-9 h-11 text-sm"
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="flex min-w-[140px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <label className="flex min-w-[120px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value as TagFilter)}
+                    className="h-10 w-full bg-transparent text-sm text-foreground focus:outline-none"
+                    aria-label="按标签筛选"
+                  >
+                    <option value="all">全部标签</option>
+                    <option value="校招">校招</option>
+                    <option value="实习">实习</option>
+                    <option value="社招">社招</option>
+                    <option value="untagged">未标记</option>
+                  </select>
+                </label>
+
+                <label className="flex min-w-[120px] items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
                   <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
                   <select
                     value={statusFilter}
@@ -564,6 +624,9 @@ export default function ResumesPage() {
                 </span>
                 <span className="rounded-full bg-muted px-2.5 py-1">
                   {techFilter === "all" ? "全部技术方向" : techFilter}
+                </span>
+                <span className="rounded-full bg-muted px-2.5 py-1">
+                  {tagFilter === "all" ? "全部标签" : tagFilter === "untagged" ? "未标记" : tagFilter}
                 </span>
                 <span className="rounded-full bg-muted px-2.5 py-1">
                   检索结果 {sortedResumes.length} / {resumes.length}
@@ -676,7 +739,36 @@ export default function ResumesPage() {
                         </div>
                       </div>
                     </div>
-                    <StatusBadge status={resume.status} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge status={resume.status} />
+                    </div>
+                  </div>
+
+                  {/* Tag badges */}
+                  <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.preventDefault()}>
+                    {TAG_OPTIONS.map((opt) => {
+                      const isActive = resume.tag === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleTagChange(
+                              resume.id,
+                              isActive ? "" : opt.value
+                            );
+                          }}
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-all ${
+                            isActive
+                              ? opt.className
+                              : "bg-gray-50 text-gray-400 ring-1 ring-gray-200 hover:bg-gray-100 hover:text-gray-600"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Row 2: score ring + details + arrow */}

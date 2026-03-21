@@ -21,6 +21,7 @@ export async function GET() {
         status: true,
         analysisJson: true,
         updatedAt: true,
+        tag: true,
       },
     });
 
@@ -66,6 +67,7 @@ export async function GET() {
         experienceYears,
         levelMatch,
         recommendation,
+        tag: resume.tag,
       };
     });
 

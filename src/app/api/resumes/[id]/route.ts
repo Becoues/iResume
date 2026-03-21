@@ -115,6 +115,29 @@ export async function PATCH(
       );
     }
 
+    // Handle tag update
+    const VALID_TAGS = ["校招", "实习", "社招"];
+    if ("tag" in patch) {
+      if (patch.tag !== null && !VALID_TAGS.includes(patch.tag)) {
+        return NextResponse.json(
+          { error: `Invalid tag. Must be one of: ${VALID_TAGS.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      const updated = await prisma.resume.update({
+        where: { id: params.id },
+        data: { tag: patch.tag },
+      });
+      // If only tag update, return early
+      if (Object.keys(patch).length === 1) {
+        let parsedAnalysis: object | null = null;
+        if (updated.analysisJson) {
+          try { parsedAnalysis = JSON.parse(updated.analysisJson); } catch {}
+        }
+        return NextResponse.json({ ...updated, analysisJson: parsedAnalysis });
+      }
+    }
+
     // Parse the existing analysis (default to empty object)
     let existing: Record<string, unknown> = {};
     if (resume.analysisJson) {
@@ -125,13 +148,20 @@ export async function PATCH(
       }
     }
 
-    const merged = deepMerge(existing, patch);
+    // Remove 'tag' from patch before deep-merging into analysis
+    const { tag: _tag, ...analysisPatch } = patch;
+    const merged = deepMerge(existing, analysisPatch);
+
+    const updateData: Record<string, unknown> = {
+      analysisJson: JSON.stringify(merged),
+    };
+    if ("tag" in patch) {
+      updateData.tag = patch.tag;
+    }
 
     const updated = await prisma.resume.update({
       where: { id: params.id },
-      data: {
-        analysisJson: JSON.stringify(merged),
-      },
+      data: updateData,
     });
 
     return NextResponse.json({

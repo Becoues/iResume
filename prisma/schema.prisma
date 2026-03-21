@@ -16,12 +16,14 @@ model Resume {
   analysisJson String?
   status       String      @default("uploaded")
   errorMessage String?
+  tag          String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   recordings   Recording[]
 
   @@index([uploadDate])
   @@index([status])
+  @@index([tag])
 }
 
 model Recording {
