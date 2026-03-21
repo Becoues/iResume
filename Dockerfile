@@ -35,7 +35,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL="file:/app/data/dev.db"
+ENV DATABASE_URL="file:/app/prisma/dev.db"
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 

@@ -2,7 +2,6 @@
 set -e
 
 # Ensure data directory exists (volume mount point)
-mkdir -p /app/data
 
 echo "==> Syncing database schema..."
 node node_modules/prisma/build/index.js db push --skip-generate 2>&1
