@@ -158,7 +158,14 @@ interface ResumeRecord {
   pdfText: string;
   jdText: string | null;
   errorMessage: string | null;
+  tag?: string | null;
 }
+
+const TAG_OPTIONS: { value: string; label: string; className: string }[] = [
+  { value: "校招", label: "校招", className: "bg-blue-50 text-blue-700 ring-1 ring-blue-600/20" },
+  { value: "实习", label: "实习", className: "bg-orange-50 text-orange-700 ring-1 ring-orange-600/20" },
+  { value: "社招", label: "社招", className: "bg-purple-50 text-purple-700 ring-1 ring-purple-600/20" },
+];
 
 interface FavoriteItem {
   id: string;
@@ -722,6 +729,20 @@ export default function ResumePage({
   const isAnalyzing = resume.status === "analyzing" || analyzing;
   const isCompleted = resume.status === "completed" && analysis;
 
+  const handleTagChange = async (newTag: string) => {
+    const prev = resume.tag;
+    setResume({ ...resume, tag: newTag || null });
+    try {
+      await fetch(`/api/resumes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag: newTag || null }),
+      });
+    } catch {
+      setResume({ ...resume, tag: prev });
+    }
+  };
+
   // -----------------------------------------------------------------------
   // Render: Uploaded state
   // -----------------------------------------------------------------------
@@ -741,7 +762,7 @@ export default function ResumePage({
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
-        <ResumeHeader resume={resume} />
+        <ResumeHeader resume={resume} onTagChange={handleTagChange} />
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-gradient-to-br from-violet-50 to-blue-50 py-12 gap-6 px-6">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-blue-500 shadow-lg shadow-violet-500/25">
             <Play className="h-9 w-9 text-white ml-1" />
@@ -822,7 +843,7 @@ export default function ResumePage({
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
-        <ResumeHeader resume={resume} />
+        <ResumeHeader resume={resume} onTagChange={handleTagChange} />
         <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 to-blue-50/80 p-8 space-y-8">
           {/* Header */}
           <div className="flex items-center gap-3">
@@ -895,7 +916,7 @@ export default function ResumePage({
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
-        <ResumeHeader resume={resume} />
+        <ResumeHeader resume={resume} onTagChange={handleTagChange} />
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-200 bg-gradient-to-br from-red-50 to-orange-50 py-16 gap-6 px-6">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
             <XCircle className="h-8 w-8 text-red-500" />
@@ -927,7 +948,7 @@ export default function ResumePage({
     return (
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         <BackButton />
-        <ResumeHeader resume={resume} />
+        <ResumeHeader resume={resume} onTagChange={handleTagChange} />
         <div className="flex flex-col items-center py-20 gap-3 text-muted-foreground">
           <HelpCircle className="h-10 w-10" />
           <p>暂无分析数据</p>
@@ -1010,7 +1031,7 @@ export default function ResumePage({
             </button>
           </div>
         </div>
-        <ResumeHeader resume={resume} />
+        <ResumeHeader resume={resume} onTagChange={handleTagChange} />
       </div>
 
       {/* ============================================================= */}
@@ -1960,7 +1981,7 @@ function BackButton() {
   );
 }
 
-function ResumeHeader({ resume }: { resume: ResumeRecord }) {
+function ResumeHeader({ resume, onTagChange }: { resume: ResumeRecord; onTagChange?: (tag: string) => void }) {
   const statusMap: Record<string, { label: string; color: string }> = {
     uploaded: {
       label: "\u5DF2\u4E0A\u4F20",
@@ -1983,6 +2004,9 @@ function ResumeHeader({ resume }: { resume: ResumeRecord }) {
     label: resume.status,
     color: "bg-gray-100 text-gray-700",
   };
+  const tagStyle = resume.tag
+    ? TAG_OPTIONS.find(t => t.value === resume.tag)?.className ?? "bg-gray-100 text-gray-600"
+    : "bg-gray-100 text-gray-400";
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -2004,11 +2028,25 @@ function ResumeHeader({ resume }: { resume: ResumeRecord }) {
           </p>
         </div>
       </div>
-      <span
-        className={`inline-flex items-center self-start rounded-full px-2.5 py-1 text-xs font-semibold ${st.color}`}
-      >
-        {st.label}
-      </span>
+      <div className="flex items-center gap-2 self-start">
+        {onTagChange && (
+          <select
+            value={resume.tag ?? ""}
+            onChange={(e) => onTagChange(e.target.value)}
+            className={`appearance-none rounded-full px-3 py-1 text-xs font-semibold cursor-pointer border-0 outline-none ${tagStyle}`}
+          >
+            <option value="">待选标签</option>
+            {TAG_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        )}
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${st.color}`}
+        >
+          {st.label}
+        </span>
+      </div>
     </div>
   );
 }
