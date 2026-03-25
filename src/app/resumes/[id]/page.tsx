@@ -38,8 +38,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { ANALYSIS_MODULES } from "@/lib/modules";
-import { moduleToMarkdown } from "@/lib/export-markdown";
-import { exportAsPdf, downloadMarkdown } from "@/lib/export-utils";
+import { exportModulesAsPdf, exportModulesAsMarkdown } from "@/lib/export-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -371,15 +370,10 @@ export default function ResumePage({
   // Active section for sidebar navigation
   const [activeSection, setActiveSection] = useState<string>("candidateProfile");
 
-  // Export
-  const moduleContentRef = useRef<HTMLDivElement>(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  useEffect(() => {
-    if (!exportOpen) return;
-    const close = () => setExportOpen(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [exportOpen]);
+  // Export dialog
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportModules, setExportModules] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   // Favorites (persisted in localStorage per resume)
   const favStorageKey = `favorites-${id}`;
@@ -1001,10 +995,113 @@ export default function ResumePage({
                 <span className="hidden sm:inline">录音</span>
               </button>
             )}
+            {/* Export button */}
+            <button
+              type="button"
+              onClick={() => {
+                const keys = availableSections.map(s => s.key);
+                setExportModules(new Set(keys));
+                setShowExportDialog(true);
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-violet-300 hover:bg-violet-50 shadow-sm transition-all"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">导出</span>
+            </button>
           </div>
         </div>
         <ResumeHeader resume={resume} />
       </div>
+
+      {/* ============================================================= */}
+      {/* EXPORT DIALOG */}
+      {/* ============================================================= */}
+      {showExportDialog && analysis && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-border/60 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border/40 bg-gradient-to-r from-violet-50/50 to-transparent">
+              <h3 className="text-base font-bold text-foreground">导出分析报告</h3>
+              <button type="button" onClick={() => setShowExportDialog(false)} className="rounded-lg p-1 hover:bg-muted transition-colors">
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-muted-foreground">选择需要导出的模块：</p>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {availableSections.map(section => (
+                  <label key={section.key} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-muted/40 transition-colors cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportModules.has(section.key)}
+                      onChange={() => {
+                        setExportModules(prev => {
+                          const next = new Set(prev);
+                          if (next.has(section.key)) next.delete(section.key);
+                          else next.add(section.key);
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <span className="text-sm text-foreground">{section.icon} {section.title}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setExportModules(new Set(availableSections.map(s => s.key)))}
+                  className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+                >
+                  全选
+                </button>
+                <span className="text-xs text-muted-foreground">|</span>
+                <button
+                  type="button"
+                  onClick={() => setExportModules(new Set())}
+                  className="text-xs text-violet-600 hover:text-violet-800 font-medium"
+                >
+                  取消全选
+                </button>
+                <span className="ml-auto text-xs text-muted-foreground">已选 {exportModules.size} 个模块</span>
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-border/40 bg-muted/20">
+              <button
+                type="button"
+                disabled={exportModules.size === 0 || exporting}
+                onClick={async () => {
+                  setExporting(true);
+                  try {
+                    const name = analysis.candidateProfile?.name ?? "resume";
+                    await exportModulesAsPdf([...exportModules], analysis, name);
+                  } finally {
+                    setExporting(false);
+                    setShowExportDialog(false);
+                  }
+                }}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                导出 PDF
+              </button>
+              <button
+                type="button"
+                disabled={exportModules.size === 0 || exporting}
+                onClick={() => {
+                  const name = analysis.candidateProfile?.name ?? "resume";
+                  exportModulesAsMarkdown([...exportModules], analysis, name);
+                  setShowExportDialog(false);
+                }}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-border/60 bg-white px-4 py-2.5 text-sm font-semibold text-foreground shadow-sm hover:shadow hover:bg-muted/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileText className="h-4 w-4" />
+                导出 Markdown
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================= */}
       {/* LEFT SIDEBAR - Fixed on desktop, horizontal tabs on mobile */}
@@ -1244,54 +1341,11 @@ export default function ResumePage({
                 <span className="flex-1 font-semibold text-foreground">
                   {currentSection.title}
                 </span>
-                {/* Export dropdown */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setExportOpen(!exportOpen)}
-                    className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-border shadow-sm hover:shadow transition-all"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    导出
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                  {exportOpen && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-border/60 bg-white shadow-lg py-1">
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors"
-                        onClick={async () => {
-                          setExportOpen(false);
-                          if (moduleContentRef.current) {
-                            const name = analysis?.candidateProfile?.name ?? "resume";
-                            await exportAsPdf(moduleContentRef.current, `${name}_${currentSection.title}.pdf`);
-                          }
-                        }}
-                      >
-                        导出 PDF
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors"
-                        onClick={() => {
-                          setExportOpen(false);
-                          if (analysis) {
-                            const name = analysis.candidateProfile?.name ?? "resume";
-                            const md = moduleToMarkdown(currentSection.key, analysis, name);
-                            downloadMarkdown(md, `${name}_${currentSection.title}.md`);
-                          }
-                        }}
-                      >
-                        导出 Markdown
-                      </button>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
             {/* Section content */}
-            <div ref={moduleContentRef} className="px-5 py-5">
+            <div className="px-5 py-5">
               {/* SECTION: Candidate Profile (with Score Card at top) */}
               {currentSection?.key === "candidateProfile" && analysis.candidateProfile && (
                 <div className="space-y-5">
