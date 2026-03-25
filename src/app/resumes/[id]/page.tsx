@@ -38,6 +38,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { ANALYSIS_MODULES } from "@/lib/modules";
+import { moduleToMarkdown } from "@/lib/export-markdown";
+import { exportAsPdf, downloadMarkdown } from "@/lib/export-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -368,6 +370,16 @@ export default function ResumePage({
 
   // Active section for sidebar navigation
   const [activeSection, setActiveSection] = useState<string>("candidateProfile");
+
+  // Export
+  const moduleContentRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = () => setExportOpen(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [exportOpen]);
 
   // Favorites (persisted in localStorage per resume)
   const favStorageKey = `favorites-${id}`;
@@ -1232,11 +1244,54 @@ export default function ResumePage({
                 <span className="flex-1 font-semibold text-foreground">
                   {currentSection.title}
                 </span>
+                {/* Export dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExportOpen(!exportOpen)}
+                    className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-border shadow-sm hover:shadow transition-all"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    导出
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                  {exportOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-36 rounded-lg border border-border/60 bg-white shadow-lg py-1">
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors"
+                        onClick={async () => {
+                          setExportOpen(false);
+                          if (moduleContentRef.current) {
+                            const name = analysis?.candidateProfile?.name ?? "resume";
+                            await exportAsPdf(moduleContentRef.current, `${name}_${currentSection.title}.pdf`);
+                          }
+                        }}
+                      >
+                        导出 PDF
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors"
+                        onClick={() => {
+                          setExportOpen(false);
+                          if (analysis) {
+                            const name = analysis.candidateProfile?.name ?? "resume";
+                            const md = moduleToMarkdown(currentSection.key, analysis, name);
+                            downloadMarkdown(md, `${name}_${currentSection.title}.md`);
+                          }
+                        }}
+                      >
+                        导出 Markdown
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {/* Section content */}
-            <div className="px-5 py-5">
+            <div ref={moduleContentRef} className="px-5 py-5">
               {/* SECTION: Candidate Profile (with Score Card at top) */}
               {currentSection?.key === "candidateProfile" && analysis.candidateProfile && (
                 <div className="space-y-5">
