@@ -16,6 +16,7 @@ export async function GET() {
       provider: "AiHubMix",
       apiKeyAihubmix: "",
       apiKeyDeerapi: "",
+      apiKeyYescode: "",
       model: "gemini-3.1-pro-preview",
     });
   }
@@ -24,16 +25,18 @@ export async function GET() {
     provider: settings.provider,
     apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
     apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
+    apiKeyYescode: maskApiKey(settings.apiKeyYescode),
     model: settings.model,
   });
 }
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { provider, apiKeyAihubmix, apiKeyDeerapi, model } = body as {
+  const { provider, apiKeyAihubmix, apiKeyDeerapi, apiKeyYescode, model } = body as {
     provider: string;
     apiKeyAihubmix?: string;
     apiKeyDeerapi?: string;
+    apiKeyYescode?: string;
     model: string;
   };
 
@@ -56,6 +59,14 @@ export async function PUT(request: Request) {
     data.apiKeyDeerapi = apiKeyDeerapi;
   }
 
+  if (
+    typeof apiKeyYescode === "string" &&
+    !apiKeyYescode.includes("...") &&
+    !apiKeyYescode.includes("••")
+  ) {
+    data.apiKeyYescode = apiKeyYescode;
+  }
+
   const settings = await prisma.settings.upsert({
     where: { id: 1 },
     update: data,
@@ -75,6 +86,12 @@ export async function PUT(request: Request) {
         !apiKeyDeerapi.includes("••")
           ? apiKeyDeerapi
           : "",
+      apiKeyYescode:
+        typeof apiKeyYescode === "string" &&
+        !apiKeyYescode.includes("...") &&
+        !apiKeyYescode.includes("••")
+          ? apiKeyYescode
+          : "",
     },
   });
 
@@ -82,6 +99,7 @@ export async function PUT(request: Request) {
     provider: settings.provider,
     apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
     apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
+    apiKeyYescode: maskApiKey(settings.apiKeyYescode),
     model: settings.model,
   });
 }

@@ -18,11 +18,12 @@ interface SettingsDialogProps {
 const PROVIDERS = [
   { value: "AiHubMix", label: "AiHubMix", hint: "https://aihubmix.com" },
   { value: "DeerAPI", label: "DeerAPI (小鹿API)", hint: "https://api.deerapi.com" },
+  { value: "YesCode", label: "YesCode", hint: "https://co.yes.vg" },
 ];
 
 const MODELS = [
   { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
-  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
   { value: "gpt-5.4", label: "GPT 5.4" },
   { value: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview ⚡" },
   { value: "qwen3.5-27b", label: "Qwen 3.5 27B ⚡" },
@@ -36,8 +37,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   // Per-provider API key state
   const [keyAihubmix, setKeyAihubmix] = useState("");
   const [keyDeerapi, setKeyDeerapi] = useState("");
+  const [keyYescode, setKeyYescode] = useState("");
   const [maskedKeyAihubmix, setMaskedKeyAihubmix] = useState("");
   const [maskedKeyDeerapi, setMaskedKeyDeerapi] = useState("");
+  const [maskedKeyYescode, setMaskedKeyYescode] = useState("");
   const [isApiKeyEditing, setIsApiKeyEditing] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -49,9 +52,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   } | null>(null);
 
   // Current key getter/setter based on active provider
-  const currentKey = provider === "DeerAPI" ? keyDeerapi : keyAihubmix;
-  const currentMaskedKey = provider === "DeerAPI" ? maskedKeyDeerapi : maskedKeyAihubmix;
-  const setCurrentKey = provider === "DeerAPI" ? setKeyDeerapi : setKeyAihubmix;
+  const currentKey = provider === "YesCode" ? keyYescode : provider === "DeerAPI" ? keyDeerapi : keyAihubmix;
+  const currentMaskedKey = provider === "YesCode" ? maskedKeyYescode : provider === "DeerAPI" ? maskedKeyDeerapi : maskedKeyAihubmix;
+  const setCurrentKey = provider === "YesCode" ? setKeyYescode : provider === "DeerAPI" ? setKeyDeerapi : setKeyAihubmix;
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
@@ -61,8 +64,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setProvider(data.provider || "AiHubMix");
       setKeyAihubmix(data.apiKeyAihubmix || "");
       setKeyDeerapi(data.apiKeyDeerapi || "");
+      setKeyYescode(data.apiKeyYescode || "");
       setMaskedKeyAihubmix(data.apiKeyAihubmix || "");
       setMaskedKeyDeerapi(data.apiKeyDeerapi || "");
+      setMaskedKeyYescode(data.apiKeyYescode || "");
       setModel(data.model || "gemini-3.1-pro-preview");
       setIsApiKeyEditing(false);
     } finally {
@@ -125,14 +130,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           provider,
           apiKeyAihubmix: keyAihubmix,
           apiKeyDeerapi: keyDeerapi,
+          apiKeyYescode: keyYescode,
           model,
         }),
       });
       const data = await res.json();
       setKeyAihubmix(data.apiKeyAihubmix || "");
       setKeyDeerapi(data.apiKeyDeerapi || "");
+      setKeyYescode(data.apiKeyYescode || "");
       setMaskedKeyAihubmix(data.apiKeyAihubmix || "");
       setMaskedKeyDeerapi(data.apiKeyDeerapi || "");
+      setMaskedKeyYescode(data.apiKeyYescode || "");
       setIsApiKeyEditing(false);
       onOpenChange(false);
     } finally {

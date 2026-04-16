@@ -19,9 +19,11 @@ export async function POST(request: Request) {
     const stored = await prisma.settings.findUnique({ where: { id: 1 } });
     if (stored) {
       apiKey =
-        provider === "DeerAPI"
-          ? stored.apiKeyDeerapi
-          : stored.apiKeyAihubmix;
+        provider === "YesCode"
+          ? stored.apiKeyYescode
+          : provider === "DeerAPI"
+            ? stored.apiKeyDeerapi
+            : stored.apiKeyAihubmix;
     } else {
       apiKey = "";
     }
