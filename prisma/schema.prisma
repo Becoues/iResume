@@ -43,6 +43,7 @@ model Settings {
   provider        String   @default("AiHubMix")
   apiKeyAihubmix  String   @default("")
   apiKeyDeerapi   String   @default("")
+  apiKeyYescode   String   @default("")
   model           String   @default("gemini-3.1-pro-preview")
   updatedAt       DateTime @updatedAt
 }
