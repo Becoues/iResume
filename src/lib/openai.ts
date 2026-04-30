@@ -1,9 +1,24 @@
 import OpenAI from "openai";
 import { prisma } from "@/lib/db";
+import { withRetry } from "@/lib/retry";
 
 // ---------------------------------------------------------------------------
 // Provider & protocol config
 // ---------------------------------------------------------------------------
+
+const REQUEST_TIMEOUT_MS = 180_000;
+const SDK_MAX_RETRIES = 4;
+const OUTER_RETRIES = 2;
+const OUTER_BASE_DELAY_MS = 800;
+
+function isTransientNetworkError(err: unknown): boolean {
+  if (err instanceof OpenAI.APIConnectionError) return true;
+  if (err instanceof OpenAI.APIConnectionTimeoutError) return true;
+  if (err instanceof OpenAI.AuthenticationError) return false;
+  if (err instanceof OpenAI.BadRequestError) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /socket|ECONNRESET|ETIMEDOUT|Connection error|fetch failed|network/i.test(msg);
+}
 
 type ApiProtocol = "chat-completions" | "responses" | "messages" | "gemini";
 
@@ -376,17 +391,31 @@ export async function completion(
   const client = new OpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
+    timeout: REQUEST_TIMEOUT_MS,
+    maxRetries: SDK_MAX_RETRIES,
   });
 
-  const response = await client.chat.completions.create({
-    model: config.model,
-    stream: false,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-  });
+  const response = await withRetry(
+    () =>
+      client.chat.completions.create({
+        model: config.model,
+        stream: false,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    {
+      retries: OUTER_RETRIES,
+      baseDelayMs: OUTER_BASE_DELAY_MS,
+      isRetryable: isTransientNetworkError,
+      onRetry: (attempt, err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[completion] retry ${attempt + 1}/${OUTER_RETRIES} after: ${msg}`);
+      },
+    },
+  );
 
   return response.choices[0]?.message?.content ?? "";
 }
@@ -419,6 +448,8 @@ export async function* streamCompletion(
   const client = new OpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
+    timeout: REQUEST_TIMEOUT_MS,
+    maxRetries: SDK_MAX_RETRIES,
   });
 
   const stream = await client.chat.completions.create({

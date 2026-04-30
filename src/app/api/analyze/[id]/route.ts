@@ -10,22 +10,26 @@ import { autoDetectTag } from "@/lib/auto-tag";
 /**
  * POST /api/analyze/[id]
  *
- * Runs selected analysis modules in parallel (max 3 concurrent to avoid
- * provider rate limits).
+ * Runs selected analysis modules in parallel. Concurrency is capped at
+ * ANALYZE_CONCURRENCY (default 5). Per-module failures are isolated:
+ * only `candidateProfile` failure is fatal, other failures still produce
+ * a `completed` analysis with the failed module names captured in
+ * `errorMessage`, so the user can selectively re-run them.
  *
  * Request body (optional):
  *   { modules?: number[] }   — IDs of modules to run (default: all)
  *
  * SSE markers:
  *   data: [STARTED]           — all calls kicked off
- *   data: [DONE:moduleKey]    — one module completed
- *   data: [DONE]              — all modules done, results persisted
+ *   data: [DONE:moduleKey]    — one module completed successfully
+ *   data: [FAIL:moduleKey]    — one module failed (non-fatal unless cp)
+ *   data: [DONE]              — all modules settled, results persisted
  *
  * Status transitions:
  *   uploaded | failed | completed  ->  analyzing  ->  completed | failed
  */
 
-const MAX_CONCURRENCY = 3;
+const MAX_CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY) || 5;
 
 /** Run async tasks with a concurrency limit */
 async function runWithConcurrency<T>(
@@ -125,19 +129,29 @@ export async function POST(
     try {
       await writer.write(encoder.encode(`data: [STARTED]\n\n`));
 
-      const results = await runWithConcurrency(
+      type ModuleResult =
+        | { key: string; outputKeys: string[]; status: "ok"; parsed: Record<string, unknown> }
+        | { key: string; outputKeys: string[]; status: "error"; error: string };
+
+      const results = await runWithConcurrency<ModuleResult>(
         tasks.map(({ module: mod, prompt }) => async () => {
-          const raw = await completion(prompt.system, prompt.user);
-          await writer.write(
-            encoder.encode(`data: [DONE:${mod.key}]\n\n`)
-          );
-          return { key: mod.key, outputKeys: mod.outputKeys, raw };
+          try {
+            const raw = await completion(prompt.system, prompt.user);
+            const parsed = extractAndParseJSON(raw) as Record<string, unknown>;
+            await writer.write(encoder.encode(`data: [DONE:${mod.key}]\n\n`));
+            return { key: mod.key, outputKeys: mod.outputKeys, status: "ok", parsed };
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`Module ${mod.key} failed for resume ${params.id}:`, err);
+            await writer.write(encoder.encode(`data: [FAIL:${mod.key}]\n\n`));
+            return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: msg };
+          }
         }),
         MAX_CONCURRENCY,
       );
 
       // =================================================================
-      // Parse and merge results
+      // Merge per-module results, isolating failures
       // =================================================================
 
       // Start from existing analysis if re-analyzing
@@ -150,52 +164,41 @@ export async function POST(
         }
       }
 
-      let fatalError = false;
+      const failed: { key: string; error: string }[] = [];
 
-      for (const result of results) {
-        try {
-          const parsed = extractAndParseJSON(result.raw) as Record<
-            string,
-            unknown
-          >;
-          for (const outKey of result.outputKeys) {
-            if (parsed[outKey] !== undefined) {
-              (analysis as Record<string, unknown>)[outKey] = parsed[outKey];
+      for (const r of results) {
+        if (r.status === "ok") {
+          for (const outKey of r.outputKeys) {
+            if (r.parsed[outKey] !== undefined) {
+              (analysis as Record<string, unknown>)[outKey] = r.parsed[outKey];
             }
           }
-        } catch (parseErr) {
-          console.error(
-            `Module ${result.key} JSON parse failed for resume ${params.id}:`,
-            parseErr
-          );
-
-          // Only candidateProfile (module 0) failure is fatal
-          if (result.key === "candidateProfile") {
-            fatalError = true;
-            await prisma.resume.update({
-              where: { id: params.id },
-              data: {
-                status: "failed",
-                errorMessage: `候选人档案模块解析失败: LLM 返回的不是合法 JSON`,
-                analysisJson: result.raw,
-              },
-            });
-            await writer.write(
-              encoder.encode(
-                `data: ${JSON.stringify("[ERROR] candidateProfile parse failed")}\n\n`
-              )
-            );
-          }
+        } else {
+          failed.push({ key: r.key, error: r.error });
         }
       }
 
-      if (fatalError) {
+      // Only candidateProfile failure is fatal — without it the whole analysis is meaningless
+      const cpFailed = failed.find((f) => f.key === "candidateProfile");
+      if (cpFailed) {
+        await prisma.resume.update({
+          where: { id: params.id },
+          data: {
+            status: "failed",
+            errorMessage: `候选人档案模块失败: ${cpFailed.error}`,
+          },
+        });
+        await writer.write(
+          encoder.encode(
+            `data: ${JSON.stringify(`[ERROR] candidateProfile failed: ${cpFailed.error}`)}\n\n`
+          )
+        );
         await writer.close();
         return;
       }
 
       // =================================================================
-      // Post-process and persist
+      // Post-process and persist (partial success allowed)
       // =================================================================
       postProcessScores(analysis as ResumeAnalysis);
 
@@ -215,7 +218,9 @@ export async function POST(
         data: {
           analysisJson: JSON.stringify(analysis),
           status: "completed",
-          errorMessage: null,
+          errorMessage: failed.length === 0
+            ? null
+            : `失败模块: [${failed.map((f) => f.key).join(", ")}] — ${failed[0].error}`,
           tag,
         },
       });
