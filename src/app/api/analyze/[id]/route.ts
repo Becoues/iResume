@@ -205,7 +205,18 @@ export async function POST(
         }
       }
 
+      // Merge with previous moduleStatus so partial reruns preserve untouched modules
+      let moduleStatus: Record<string, { status: "ok" | "error"; error?: string; lastRunAt: string }> = {};
+      if (resume.moduleStatus) {
+        try {
+          moduleStatus = JSON.parse(resume.moduleStatus);
+        } catch {
+          moduleStatus = {};
+        }
+      }
+
       const failed: { key: string; error: string }[] = [];
+      const nowIso = new Date().toISOString();
 
       for (const r of results) {
         if (r.status === "ok") {
@@ -214,8 +225,10 @@ export async function POST(
               (analysis as Record<string, unknown>)[outKey] = r.parsed[outKey];
             }
           }
+          moduleStatus[r.key] = { status: "ok", lastRunAt: nowIso };
         } else {
           failed.push({ key: r.key, error: r.error });
+          moduleStatus[r.key] = { status: "error", error: r.error, lastRunAt: nowIso };
         }
       }
 
@@ -227,6 +240,7 @@ export async function POST(
           data: {
             status: "failed",
             errorMessage: `候选人档案模块失败: ${cpFailed.error}`,
+            moduleStatus: JSON.stringify(moduleStatus),
           },
         });
         await safeWrite(
@@ -252,14 +266,21 @@ export async function POST(
         levelMatch: (analysis as Record<string, unknown> as { candidateProfile?: { levelMatch?: string } }).candidateProfile?.levelMatch,
       });
 
+      // After merge, recompute aggregate failure list across all known modules,
+      // so legacy modules that are still failed from a previous run remain visible.
+      const aggregateFailed = Object.entries(moduleStatus)
+        .filter(([, v]) => v.status === "error")
+        .map(([key, v]) => ({ key, error: v.error || "未知错误" }));
+
       await prisma.resume.update({
         where: { id: params.id },
         data: {
           analysisJson: JSON.stringify(analysis),
+          moduleStatus: JSON.stringify(moduleStatus),
           status: "completed",
-          errorMessage: failed.length === 0
+          errorMessage: aggregateFailed.length === 0
             ? null
-            : `失败模块: [${failed.map((f) => f.key).join(", ")}] — ${failed[0].error}`,
+            : `失败模块: [${aggregateFailed.map((f) => f.key).join(", ")}] — ${aggregateFailed[0].error}`,
           tag,
         },
       });

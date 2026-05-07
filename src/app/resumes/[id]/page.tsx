@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -149,6 +149,13 @@ interface ResumeAnalysis {
   };
 }
 
+type ModuleRunStatus = "ok" | "error";
+interface ModuleStatusEntry {
+  status: ModuleRunStatus;
+  error?: string;
+  lastRunAt: string;
+}
+
 interface ResumeRecord {
   id: string;
   filename: string;
@@ -159,6 +166,8 @@ interface ResumeRecord {
   jdText: string | null;
   errorMessage: string | null;
   tag?: string | null;
+  /** Stored as JSON string in DB; the GET route returns it raw */
+  moduleStatus?: string | null;
 }
 
 const TAG_OPTIONS: { value: string; label: string; className: string }[] = [
@@ -651,17 +660,19 @@ export default function ResumePage({
 
   // -----------------------------------------------------------------------
   // Start analysis (streaming)
+  // moduleIds: optional override — when omitted, uses the user's selectedModules.
   // -----------------------------------------------------------------------
-  const startAnalysis = useCallback(async () => {
+  const runAnalysis = useCallback(async (moduleIds?: number[]) => {
     setAnalyzing(true);
     setStreamText("");
     setAnalysisPhase(1);
     setDoneSteps(new Set());
     try {
+      const ids = moduleIds ?? Array.from(selectedModules);
       const res = await fetch(`/api/analyze/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modules: Array.from(selectedModules) }),
+        body: JSON.stringify({ modules: ids }),
       });
       if (!res.ok) throw new Error("Analysis request failed");
       const reader = res.body?.getReader();
@@ -691,6 +702,37 @@ export default function ResumePage({
       setDoneSteps(new Set());
     }
   }, [id, fetchResume, selectedModules]);
+
+  const startAnalysis = useCallback(() => runAnalysis(), [runAnalysis]);
+
+  // Retry a single failed module by its key (e.g. "technicalQuestions").
+  // candidateProfile is always required by the backend, so it is appended.
+  const retryModule = useCallback(
+    async (moduleKey: string) => {
+      const mod = ANALYSIS_MODULES.find((m) => m.key === moduleKey);
+      if (!mod) return;
+      const ids = mod.id === 0 ? [0] : [0, mod.id];
+      await runAnalysis(ids);
+    },
+    [runAnalysis],
+  );
+
+  // Parse moduleStatus from DB once per resume update
+  const failedModules = useMemo(() => {
+    if (!resume?.moduleStatus) return [] as { key: string; label: string; error: string }[];
+    try {
+      const map = JSON.parse(resume.moduleStatus) as Record<string, ModuleStatusEntry>;
+      return Object.entries(map)
+        .filter(([, v]) => v.status === "error")
+        .map(([key, v]) => ({
+          key,
+          label: ANALYSIS_MODULES.find((m) => m.key === key)?.label ?? key,
+          error: v.error || "未知错误",
+        }));
+    } catch {
+      return [];
+    }
+  }, [resume?.moduleStatus]);
 
   // -----------------------------------------------------------------------
   // Loading / Error states
@@ -1032,6 +1074,36 @@ export default function ResumePage({
           </div>
         </div>
         <ResumeHeader resume={resume} onTagChange={handleTagChange} />
+
+        {/* Failed-module banner — per-module retry */}
+        {failedModules.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900 mb-2">
+                  有 {failedModules.length} 个模块未成功
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {failedModules.map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      disabled={analyzing}
+                      onClick={() => retryModule(m.key)}
+                      title={m.error}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 hover:border-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span>{m.label}</span>
+                      <span className="text-amber-500">·</span>
+                      <span className="text-amber-700">{analyzing ? "重试中..." : "重试此模块"}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ============================================================= */}
