@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/db";
-import { completion } from "@/lib/openai";
+import { completion, addUsage, type TokenUsage } from "@/lib/openai";
 import { buildModulePrompt } from "@/lib/prompt";
 import { ANALYSIS_MODULES } from "@/lib/modules";
 import { extractAndParseJSON } from "@/lib/json-utils";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
 import { autoDetectTag } from "@/lib/auto-tag";
+import { estimateCostUSD } from "@/lib/pricing";
 
 /**
  * POST /api/analyze/[id]
@@ -146,6 +147,13 @@ export async function POST(
     }
   };
 
+  // -----------------------------------------------------------------------
+  // Track aggregate usage and timing across this run
+  // -----------------------------------------------------------------------
+  const runStartedAt = Date.now();
+  let aggregateUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let runModel: string | null = null;
+
   (async () => {
     try {
       await safeWrite(`data: [STARTED]\n\n`);
@@ -157,8 +165,10 @@ export async function POST(
       const results = await runWithConcurrency<ModuleResult>(
         tasks.map(({ module: mod, prompt }) => async () => {
           try {
-            const raw = await completion(prompt.system, prompt.user, abortCtl.signal);
-            const parsed = extractAndParseJSON(raw) as Record<string, unknown>;
+            const result = await completion(prompt.system, prompt.user, abortCtl.signal);
+            aggregateUsage = addUsage(aggregateUsage, result.usage);
+            runModel = result.model;
+            const parsed = extractAndParseJSON(result.text) as Record<string, unknown>;
             await safeWrite(`data: [DONE:${mod.key}]\n\n`);
             return { key: mod.key, outputKeys: mod.outputKeys, status: "ok", parsed };
           } catch (err) {
@@ -235,12 +245,26 @@ export async function POST(
       // Only candidateProfile failure is fatal — without it the whole analysis is meaningless
       const cpFailed = failed.find((f) => f.key === "candidateProfile");
       if (cpFailed) {
+        const cpStats = {
+          promptTokens: aggregateUsage.promptTokens,
+          completionTokens: aggregateUsage.completionTokens,
+          totalTokens: aggregateUsage.totalTokens,
+          durationMs: Date.now() - runStartedAt,
+          model: runModel,
+          estimatedCostUSD: runModel
+            ? estimateCostUSD(runModel, aggregateUsage.promptTokens, aggregateUsage.completionTokens)
+            : null,
+          runAt: new Date().toISOString(),
+          modulesRun: results.length,
+          modulesOk: results.filter((r) => r.status === "ok").length,
+        };
         await prisma.resume.update({
           where: { id: params.id },
           data: {
             status: "failed",
             errorMessage: `候选人档案模块失败: ${cpFailed.error}`,
             moduleStatus: JSON.stringify(moduleStatus),
+            lastRunStats: JSON.stringify(cpStats),
           },
         });
         await safeWrite(
@@ -272,11 +296,30 @@ export async function POST(
         .filter(([, v]) => v.status === "error")
         .map(([key, v]) => ({ key, error: v.error || "未知错误" }));
 
+      // -----------------------------------------------------------------
+      // Build per-run stats: tokens / duration / estimated cost.
+      // Stored as JSON on Resume.lastRunStats so the UI can display it.
+      // -----------------------------------------------------------------
+      const runStats = {
+        promptTokens: aggregateUsage.promptTokens,
+        completionTokens: aggregateUsage.completionTokens,
+        totalTokens: aggregateUsage.totalTokens,
+        durationMs: Date.now() - runStartedAt,
+        model: runModel,
+        estimatedCostUSD: runModel
+          ? estimateCostUSD(runModel, aggregateUsage.promptTokens, aggregateUsage.completionTokens)
+          : null,
+        runAt: new Date().toISOString(),
+        modulesRun: results.length,
+        modulesOk: results.filter((r) => r.status === "ok").length,
+      };
+
       await prisma.resume.update({
         where: { id: params.id },
         data: {
           analysisJson: JSON.stringify(analysis),
           moduleStatus: JSON.stringify(moduleStatus),
+          lastRunStats: JSON.stringify(runStats),
           status: "completed",
           errorMessage: aggregateFailed.length === 0
             ? null

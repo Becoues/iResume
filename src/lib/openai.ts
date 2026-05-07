@@ -20,6 +20,31 @@ function isTransientNetworkError(err: unknown): boolean {
   return /socket|ECONNRESET|ETIMEDOUT|Connection error|fetch failed|network/i.test(msg);
 }
 
+// ---------------------------------------------------------------------------
+// Token usage — normalized across providers
+// ---------------------------------------------------------------------------
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface CompletionResult {
+  text: string;
+  usage: TokenUsage | null;
+  model: string;
+}
+
+export function addUsage(a: TokenUsage, b: TokenUsage | null): TokenUsage {
+  if (!b) return a;
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  };
+}
+
 type ApiProtocol = "chat-completions" | "responses" | "messages" | "gemini";
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
@@ -100,7 +125,7 @@ async function messagesCompletion(
   systemPrompt: string,
   userMessage: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<CompletionResult> {
   const base = messagesBaseURL(config.baseURL);
   const res = await fetch(`${base}/v1/messages`, {
     method: "POST",
@@ -121,7 +146,18 @@ async function messagesCompletion(
   }
 
   const data = await res.json();
-  return data.content?.[0]?.text ?? "";
+  const text = data.content?.[0]?.text ?? "";
+  let usage: TokenUsage | null = null;
+  if (data.usage) {
+    const promptTokens = data.usage.input_tokens ?? 0;
+    const completionTokens = data.usage.output_tokens ?? 0;
+    usage = {
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+    };
+  }
+  return { text, usage, model: config.model };
 }
 
 async function* messagesStreamCompletion(
@@ -218,7 +254,7 @@ async function responsesCompletion(
   systemPrompt: string,
   userMessage: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<CompletionResult> {
   const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
   const response = await client.responses.create(
     {
@@ -231,7 +267,17 @@ async function responsesCompletion(
     },
     { signal },
   );
-  return response.output_text;
+  let usage: TokenUsage | null = null;
+  if (response.usage) {
+    const promptTokens = response.usage.input_tokens ?? 0;
+    const completionTokens = response.usage.output_tokens ?? 0;
+    usage = {
+      promptTokens,
+      completionTokens,
+      totalTokens: response.usage.total_tokens ?? promptTokens + completionTokens,
+    };
+  }
+  return { text: response.output_text, usage, model: config.model };
 }
 
 async function* responsesStreamCompletion(
@@ -275,7 +321,7 @@ async function geminiCompletion(
   systemPrompt: string,
   userMessage: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<CompletionResult> {
   const base = geminiBaseURL(config.baseURL);
   const res = await fetch(
     `${base}/v1beta/models/${config.model}:generateContent`,
@@ -300,7 +346,18 @@ async function geminiCompletion(
   }
 
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  let usage: TokenUsage | null = null;
+  if (data.usageMetadata) {
+    const promptTokens = data.usageMetadata.promptTokenCount ?? 0;
+    const completionTokens = data.usageMetadata.candidatesTokenCount ?? 0;
+    usage = {
+      promptTokens,
+      completionTokens,
+      totalTokens: data.usageMetadata.totalTokenCount ?? promptTokens + completionTokens,
+    };
+  }
+  return { text, usage, model: config.model };
 }
 
 async function* geminiStreamCompletion(
@@ -401,7 +458,7 @@ export async function completion(
   systemPrompt: string,
   userMessage: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<CompletionResult> {
   const config = await getConfig();
 
   if (config.protocol === "messages") {
@@ -449,7 +506,22 @@ export async function completion(
     },
   );
 
-  return response.choices[0]?.message?.content ?? "";
+  let usage: TokenUsage | null = null;
+  if (response.usage) {
+    usage = {
+      promptTokens: response.usage.prompt_tokens ?? 0,
+      completionTokens: response.usage.completion_tokens ?? 0,
+      totalTokens:
+        response.usage.total_tokens ??
+        (response.usage.prompt_tokens ?? 0) + (response.usage.completion_tokens ?? 0),
+    };
+  }
+
+  return {
+    text: response.choices[0]?.message?.content ?? "",
+    usage,
+    model: config.model,
+  };
 }
 
 // ---------------------------------------------------------------------------

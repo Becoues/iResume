@@ -16,6 +16,8 @@ model Resume {
   analysisJson String?
   /// JSON map of moduleKey -> { status: "ok"|"error", error?: string, lastRunAt: ISOString }
   moduleStatus String?
+  /// JSON: { promptTokens, completionTokens, totalTokens, durationMs, estimatedCostUSD?, model, runAt, modulesRun: number }
+  lastRunStats String?
   status       String      @default("uploaded")
   errorMessage String?
   tag          String?

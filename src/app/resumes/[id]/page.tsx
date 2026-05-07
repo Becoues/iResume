@@ -168,6 +168,20 @@ interface ResumeRecord {
   tag?: string | null;
   /** Stored as JSON string in DB; the GET route returns it raw */
   moduleStatus?: string | null;
+  /** Stored as JSON string in DB; usage stats from latest analyze run */
+  lastRunStats?: string | null;
+}
+
+interface RunStats {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  durationMs: number;
+  model: string | null;
+  estimatedCostUSD: number | null;
+  runAt: string;
+  modulesRun: number;
+  modulesOk: number;
 }
 
 const TAG_OPTIONS: { value: string; label: string; className: string }[] = [
@@ -717,6 +731,16 @@ export default function ResumePage({
     [runAnalysis],
   );
 
+  // Parse latest run stats for the usage chip
+  const runStats = useMemo<RunStats | null>(() => {
+    if (!resume?.lastRunStats) return null;
+    try {
+      return JSON.parse(resume.lastRunStats) as RunStats;
+    } catch {
+      return null;
+    }
+  }, [resume?.lastRunStats]);
+
   // Parse moduleStatus from DB once per resume update
   const failedModules = useMemo(() => {
     if (!resume?.moduleStatus) return [] as { key: string; label: string; error: string }[];
@@ -1074,6 +1098,31 @@ export default function ResumePage({
           </div>
         </div>
         <ResumeHeader resume={resume} onTagChange={handleTagChange} />
+
+        {/* Latest analyze run stats: tokens / duration / cost */}
+        {runStats && runStats.totalTokens > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full bg-violet-50 border border-violet-100 px-2.5 py-1 font-medium text-violet-700">
+              {runStats.totalTokens.toLocaleString()} tokens
+            </span>
+            <span className="rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 font-medium text-blue-700">
+              {(runStats.durationMs / 1000).toFixed(1)}s
+            </span>
+            {runStats.estimatedCostUSD !== null && (
+              <span className="rounded-full bg-emerald-50 border border-emerald-100 px-2.5 py-1 font-medium text-emerald-700">
+                ≈ ${runStats.estimatedCostUSD.toFixed(4)}
+              </span>
+            )}
+            {runStats.model && (
+              <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-1 text-muted-foreground">
+                {runStats.model}
+              </span>
+            )}
+            <span className="text-[11px] text-muted-foreground/80">
+              {runStats.modulesOk}/{runStats.modulesRun} 模块
+            </span>
+          </div>
+        )}
 
         {/* Failed-module banner — per-module retry */}
         {failedModules.length > 0 && (
