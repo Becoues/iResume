@@ -3,6 +3,7 @@ import { completion, addUsage, type TokenUsage } from "@/lib/openai";
 import { buildModulePrompt } from "@/lib/prompt";
 import { ANALYSIS_MODULES } from "@/lib/modules";
 import { extractAndParseJSON } from "@/lib/json-utils";
+import { validateModuleOutput } from "@/lib/schema";
 import type { ResumeAnalysis } from "@/lib/types";
 import { postProcessScores } from "@/lib/score-utils";
 import { autoDetectTag } from "@/lib/auto-tag";
@@ -168,9 +169,19 @@ export async function POST(
             const result = await completion(prompt.system, prompt.user, abortCtl.signal);
             aggregateUsage = addUsage(aggregateUsage, result.usage);
             runModel = result.model;
-            const parsed = extractAndParseJSON(result.text) as Record<string, unknown>;
+            const parsed = extractAndParseJSON(result.text);
+
+            // Schema-validate the LLM output against this module's envelope.
+            // On failure, treat as a module error (isolated per-module retry).
+            const validation = validateModuleOutput(mod.key, parsed);
+            if (!validation.ok) {
+              console.error(`Module ${mod.key} schema validation failed:`, validation.error);
+              await safeWrite(`data: [FAIL:${mod.key}]\n\n`);
+              return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: validation.error };
+            }
+
             await safeWrite(`data: [DONE:${mod.key}]\n\n`);
-            return { key: mod.key, outputKeys: mod.outputKeys, status: "ok", parsed };
+            return { key: mod.key, outputKeys: mod.outputKeys, status: "ok", parsed: validation.value };
           } catch (err) {
             if (isAbortError(err) || abortCtl.signal.aborted) {
               return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: "已取消" };
