@@ -36,12 +36,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL="file:/app/prisma/dev.db"
+ENV RECORDINGS_DIR="/app/data/recordings"
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 RUN apk add --no-cache openssl && \
     addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+    adduser --system --uid 1001 nextjs && \
+    mkdir -p /app/data/recordings /app/prisma && \
+    chown -R nextjs:nodejs /app/data /app/prisma
 
 # Copy standalone server
 COPY --from=builder /app/.next/standalone ./
