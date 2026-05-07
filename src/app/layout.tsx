@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
+// Note: previously used next/font/google for Inter, but Google Fonts is
+// unreachable from many build environments. Falling back to the system font
+// stack keeps the build offline-safe.
+const fontClass = "font-sans";
 
 export const metadata: Metadata = {
   title: "简历智评 - AI Resume Analyzer",
@@ -53,8 +51,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={inter.variable}>
-      <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
+    <html lang="zh-CN">
+      <body className={`${fontClass} min-h-screen bg-background text-foreground`}>
         <div className="relative flex min-h-screen flex-col">
           <Header />
           <main className="flex-1">
