@@ -31,16 +31,22 @@ import { autoDetectTag } from "@/lib/auto-tag";
 
 const MAX_CONCURRENCY = Number(process.env.ANALYZE_CONCURRENCY) || 5;
 
-/** Run async tasks with a concurrency limit */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError");
+}
+
+/** Run async tasks with a concurrency limit, exit early when signal aborts */
 async function runWithConcurrency<T>(
   fns: (() => Promise<T>)[],
   limit: number,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const results: T[] = new Array(fns.length);
   let nextIndex = 0;
 
   async function worker() {
     while (nextIndex < fns.length) {
+      if (signal?.aborted) return;
       const i = nextIndex++;
       results[i] = await fns[i]();
     }
@@ -125,9 +131,24 @@ export async function POST(
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
+  // Bridge client disconnect → abort upstream LLM calls
+  const abortCtl = new AbortController();
+  const onClientAbort = () => abortCtl.abort();
+  request.signal.addEventListener("abort", onClientAbort);
+
+  // Best-effort SSE write — silently no-op if stream is already closed
+  const safeWrite = async (chunk: string) => {
+    if (abortCtl.signal.aborted) return;
+    try {
+      await writer.write(encoder.encode(chunk));
+    } catch {
+      // stream closed by client
+    }
+  };
+
   (async () => {
     try {
-      await writer.write(encoder.encode(`data: [STARTED]\n\n`));
+      await safeWrite(`data: [STARTED]\n\n`);
 
       type ModuleResult =
         | { key: string; outputKeys: string[]; status: "ok"; parsed: Record<string, unknown> }
@@ -136,19 +157,39 @@ export async function POST(
       const results = await runWithConcurrency<ModuleResult>(
         tasks.map(({ module: mod, prompt }) => async () => {
           try {
-            const raw = await completion(prompt.system, prompt.user);
+            const raw = await completion(prompt.system, prompt.user, abortCtl.signal);
             const parsed = extractAndParseJSON(raw) as Record<string, unknown>;
-            await writer.write(encoder.encode(`data: [DONE:${mod.key}]\n\n`));
+            await safeWrite(`data: [DONE:${mod.key}]\n\n`);
             return { key: mod.key, outputKeys: mod.outputKeys, status: "ok", parsed };
           } catch (err) {
+            if (isAbortError(err) || abortCtl.signal.aborted) {
+              return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: "已取消" };
+            }
             const msg = err instanceof Error ? err.message : String(err);
             console.error(`Module ${mod.key} failed for resume ${params.id}:`, err);
-            await writer.write(encoder.encode(`data: [FAIL:${mod.key}]\n\n`));
+            await safeWrite(`data: [FAIL:${mod.key}]\n\n`);
             return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: msg };
           }
         }),
         MAX_CONCURRENCY,
+        abortCtl.signal,
       );
+
+      // -----------------------------------------------------------------
+      // Client disconnected mid-flight — persist canceled state and exit.
+      // -----------------------------------------------------------------
+      if (abortCtl.signal.aborted) {
+        console.warn(`[analyze:${params.id}] aborted by client`);
+        await prisma.resume.update({
+          where: { id: params.id },
+          data: {
+            status: "failed",
+            errorMessage: "已取消（客户端断开连接）",
+          },
+        });
+        try { await writer.close(); } catch {}
+        return;
+      }
 
       // =================================================================
       // Merge per-module results, isolating failures
@@ -188,12 +229,10 @@ export async function POST(
             errorMessage: `候选人档案模块失败: ${cpFailed.error}`,
           },
         });
-        await writer.write(
-          encoder.encode(
-            `data: ${JSON.stringify(`[ERROR] candidateProfile failed: ${cpFailed.error}`)}\n\n`
-          )
+        await safeWrite(
+          `data: ${JSON.stringify(`[ERROR] candidateProfile failed: ${cpFailed.error}`)}\n\n`,
         );
-        await writer.close();
+        try { await writer.close(); } catch {}
         return;
       }
 
@@ -225,9 +264,23 @@ export async function POST(
         },
       });
 
-      await writer.write(encoder.encode(`data: [DONE]\n\n`));
-      await writer.close();
+      await safeWrite(`data: [DONE]\n\n`);
+      try { await writer.close(); } catch {}
     } catch (error) {
+      // Treat aborts as cancellations, not failures
+      if (isAbortError(error) || abortCtl.signal.aborted) {
+        console.warn(`[analyze:${params.id}] aborted by client`);
+        await prisma.resume.update({
+          where: { id: params.id },
+          data: {
+            status: "failed",
+            errorMessage: "已取消（客户端断开连接）",
+          },
+        });
+        try { await writer.close(); } catch {}
+        return;
+      }
+
       const message =
         error instanceof Error
           ? error.message
@@ -243,16 +296,10 @@ export async function POST(
         },
       });
 
-      try {
-        await writer.write(
-          encoder.encode(
-            `data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`
-          )
-        );
-        await writer.close();
-      } catch {
-        await writer.abort();
-      }
+      await safeWrite(`data: ${JSON.stringify(`[ERROR] ${message}`)}\n\n`);
+      try { await writer.close(); } catch {}
+    } finally {
+      request.signal.removeEventListener("abort", onClientAbort);
     }
   })();
 

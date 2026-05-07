@@ -99,11 +99,13 @@ async function messagesCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const base = messagesBaseURL(config.baseURL);
   const res = await fetch(`${base}/v1/messages`, {
     method: "POST",
     headers: messagesHeaders(config.apiKey),
+    signal,
     body: JSON.stringify({
       model: config.model,
       max_tokens: 16384,
@@ -126,11 +128,13 @@ async function* messagesStreamCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const base = messagesBaseURL(config.baseURL);
   const res = await fetch(`${base}/v1/messages`, {
     method: "POST",
     headers: messagesHeaders(config.apiKey),
+    signal,
     body: JSON.stringify({
       model: config.model,
       max_tokens: 16384,
@@ -150,28 +154,33 @@ async function* messagesStreamCompletion(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") return;
-        try {
-          const event = JSON.parse(data);
-          if (event.type === "content_block_delta" && event.delta?.text) {
-            yield event.delta.text;
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data === "[DONE]") return;
+          try {
+            const event = JSON.parse(data);
+            if (event.type === "content_block_delta" && event.delta?.text) {
+              yield event.delta.text;
+            }
+          } catch {
+            // skip malformed JSON
           }
-        } catch {
-          // skip malformed JSON
         }
       }
     }
+  } finally {
+    try { await reader.cancel(); } catch {}
   }
 }
 
@@ -208,16 +217,20 @@ async function responsesCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
-  const response = await client.responses.create({
-    model: config.model,
-    input: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    text: { format: { type: "json_object" } },
-  });
+  const response = await client.responses.create(
+    {
+      model: config.model,
+      input: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      text: { format: { type: "json_object" } },
+    },
+    { signal },
+  );
   return response.output_text;
 }
 
@@ -225,19 +238,24 @@ async function* responsesStreamCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
-  const stream = await client.responses.create({
-    model: config.model,
-    input: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    text: { format: { type: "json_object" } },
-    stream: true,
-  });
+  const stream = await client.responses.create(
+    {
+      model: config.model,
+      input: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      text: { format: { type: "json_object" } },
+      stream: true,
+    },
+    { signal },
+  );
 
   for await (const event of stream) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (event.type === "response.output_text.delta") {
       yield event.delta;
     }
@@ -256,6 +274,7 @@ async function geminiCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const base = geminiBaseURL(config.baseURL);
   const res = await fetch(
@@ -266,6 +285,7 @@ async function geminiCompletion(
         "x-goog-api-key": config.apiKey,
         "Content-Type": "application/json",
       },
+      signal,
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
@@ -287,6 +307,7 @@ async function* geminiStreamCompletion(
   config: LLMConfig,
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const base = geminiBaseURL(config.baseURL);
   const res = await fetch(
@@ -297,6 +318,7 @@ async function* geminiStreamCompletion(
         "x-goog-api-key": config.apiKey,
         "Content-Type": "application/json",
       },
+      signal,
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
@@ -314,26 +336,31 @@ async function* geminiStreamCompletion(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        try {
-          const event = JSON.parse(data);
-          const text = event.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) yield text;
-        } catch {
-          // skip malformed JSON
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          try {
+            const event = JSON.parse(data);
+            const text = event.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) yield text;
+          } catch {
+            // skip malformed JSON
+          }
         }
       }
     }
+  } finally {
+    try { await reader.cancel(); } catch {}
   }
 }
 
@@ -373,19 +400,20 @@ async function geminiTestConnection(
 export async function completion(
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const config = await getConfig();
 
   if (config.protocol === "messages") {
-    return messagesCompletion(config, systemPrompt, userMessage);
+    return messagesCompletion(config, systemPrompt, userMessage, signal);
   }
 
   if (config.protocol === "responses") {
-    return responsesCompletion(config, systemPrompt, userMessage);
+    return responsesCompletion(config, systemPrompt, userMessage, signal);
   }
 
   if (config.protocol === "gemini") {
-    return geminiCompletion(config, systemPrompt, userMessage);
+    return geminiCompletion(config, systemPrompt, userMessage, signal);
   }
 
   const client = new OpenAI({
@@ -397,19 +425,23 @@ export async function completion(
 
   const response = await withRetry(
     () =>
-      client.chat.completions.create({
-        model: config.model,
-        stream: false,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-      }),
+      client.chat.completions.create(
+        {
+          model: config.model,
+          stream: false,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+        },
+        { signal },
+      ),
     {
       retries: OUTER_RETRIES,
       baseDelayMs: OUTER_BASE_DELAY_MS,
       isRetryable: isTransientNetworkError,
+      signal,
       onRetry: (attempt, err) => {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[completion] retry ${attempt + 1}/${OUTER_RETRIES} after: ${msg}`);
@@ -427,21 +459,22 @@ export async function completion(
 export async function* streamCompletion(
   systemPrompt: string,
   userMessage: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const config = await getConfig();
 
   if (config.protocol === "messages") {
-    yield* messagesStreamCompletion(config, systemPrompt, userMessage);
+    yield* messagesStreamCompletion(config, systemPrompt, userMessage, signal);
     return;
   }
 
   if (config.protocol === "responses") {
-    yield* responsesStreamCompletion(config, systemPrompt, userMessage);
+    yield* responsesStreamCompletion(config, systemPrompt, userMessage, signal);
     return;
   }
 
   if (config.protocol === "gemini") {
-    yield* geminiStreamCompletion(config, systemPrompt, userMessage);
+    yield* geminiStreamCompletion(config, systemPrompt, userMessage, signal);
     return;
   }
 
@@ -452,21 +485,29 @@ export async function* streamCompletion(
     maxRetries: SDK_MAX_RETRIES,
   });
 
-  const stream = await client.chat.completions.create({
-    model: config.model,
-    stream: true,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-  });
+  const stream = await client.chat.completions.create(
+    {
+      model: config.model,
+      stream: true,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+    },
+    { signal },
+  );
 
-  for await (const chunk of stream) {
-    const content = chunk.choices[0]?.delta?.content;
-    if (content) {
-      yield content;
+  try {
+    for await (const chunk of stream) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        yield content;
+      }
     }
+  } finally {
+    try { stream.controller.abort(); } catch {}
   }
 }
 
