@@ -5,6 +5,8 @@ services:
       - "3001:3000"
     volumes:
       - ./prisma:/app/prisma
+      - ./data:/app/data
     environment:
       - DATABASE_URL=file:/app/prisma/dev.db
+      - RECORDINGS_DIR=/app/data/recordings
     restart: unless-stopped

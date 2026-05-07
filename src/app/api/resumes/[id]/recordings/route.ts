@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { saveRecording } from "@/lib/recordings-storage";
 
 /**
  * GET /api/resumes/[id]/recordings
@@ -73,13 +74,16 @@ export async function POST(
         : `录音 ${new Date().toLocaleString("zh-CN")}`;
 
     const buffer = Buffer.from(await audio.arrayBuffer());
+    const incomingMime = audio.type || "audio/webm";
+    const { relPath, mimeType } = await saveRecording(buffer, incomingMime);
 
     const recording = await prisma.recording.create({
       data: {
         resumeId: id,
         filename,
         duration: isNaN(duration) ? 0 : duration,
-        data: buffer,
+        path: relPath,
+        mimeType,
       },
       select: {
         id: true,

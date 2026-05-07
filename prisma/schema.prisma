@@ -33,7 +33,12 @@ model Recording {
   resumeId  String
   filename  String
   duration  Int
-  data      Bytes
+  /// Path to audio file relative to RECORDINGS_DIR (preferred). When present, `data` is ignored.
+  path      String?
+  /// MIME type of the audio file (defaults to audio/webm).
+  mimeType  String?
+  /// Legacy: inline BLOB. Nullable so new rows can leave it empty after migration to filesystem.
+  data      Bytes?
   createdAt DateTime @default(now())
   resume    Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 

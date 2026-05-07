@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:recordings": "tsx scripts/migrate-recordings-to-disk.ts"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,7 @@
   "devDependencies": {
     "eslint": "^9.39.3",
     "eslint-config-next": "^16.1.6",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "tsx": "^4.21.0"
   }
 }
