@@ -12,7 +12,14 @@ function getPdfjsDir(): string {
   }
 }
 
-export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+export interface PdfExtractResult {
+  text: string;
+  numPages: number;
+  /** True when the PDF parsed fine but no text layer was found (scanned image PDF) */
+  isLikelyScanned: boolean;
+}
+
+export async function extractTextFromPdf(buffer: Buffer): Promise<PdfExtractResult> {
   const uint8Array = new Uint8Array(buffer);
   const pdfjsDir = getPdfjsDir();
   const pdf = await getDocument({
@@ -34,5 +41,15 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
     textParts.push(pageText);
   }
 
-  return textParts.join("\n");
+  const text = textParts.join("\n");
+  const trimmed = text.trim();
+  console.log(
+    `[pdf] parsed: pages=${pdf.numPages}, raw_chars=${text.length}, trimmed_chars=${trimmed.length}`,
+  );
+
+  return {
+    text,
+    numPages: pdf.numPages,
+    isLikelyScanned: pdf.numPages > 0 && trimmed.length === 0,
+  };
 }

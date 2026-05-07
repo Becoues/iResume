@@ -145,10 +145,11 @@ export async function POST(request: Request) {
     const jdText = typeof jd === "string" && jd.trim() ? jd.trim() : null;
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    console.log(`[upload] received: name="${file.name}", size=${buffer.length} bytes`);
 
-    let pdfText: string;
+    let pdfResult;
     try {
-      pdfText = await extractTextFromPdf(buffer);
+      pdfResult = await extractTextFromPdf(buffer);
     } catch (pdfError) {
       console.error("PDF parse error:", pdfError);
       return NextResponse.json(
@@ -157,9 +158,20 @@ export async function POST(request: Request) {
       );
     }
 
+    const pdfText = pdfResult.text;
+
+    if (pdfResult.isLikelyScanned) {
+      return NextResponse.json(
+        {
+          error: `这是一份扫描版 / 图片 PDF（共 ${pdfResult.numPages} 页，未检测到文字层）。本工具暂不支持 OCR，请先用 ABBYY / Adobe / 在线 OCR 工具转成可复制文字的 PDF 后再上传。`,
+        },
+        { status: 422 }
+      );
+    }
+
     if (!pdfText || pdfText.trim().length === 0) {
       return NextResponse.json(
-        { error: "Could not extract any text from the uploaded PDF" },
+        { error: `无法从 PDF 提取文本（共 ${pdfResult.numPages} 页，提取结果为空）` },
         { status: 422 }
       );
     }
