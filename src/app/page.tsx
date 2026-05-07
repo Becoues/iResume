@@ -15,6 +15,14 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Pending state shown after upload when there are server-side warnings or
+  // truncations — the user must explicitly continue to acknowledge cost.
+  const [pending, setPending] = useState<{
+    id: string;
+    warnings: string[];
+    truncations: string[];
+    estimatedTotalTokens: number;
+  } | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -86,6 +94,23 @@ export default function HomePage() {
       }
 
       const data = await res.json();
+      const warnings: string[] = data.warnings ?? [];
+      const truncations: string[] = data.truncations ?? [];
+
+      // If the server flagged anything, hold on the homepage so the user
+      // sees the warning before kicking off an analysis that could cost more
+      // than expected. Otherwise jump straight to the detail page.
+      if (warnings.length > 0 || truncations.length > 0) {
+        setPending({
+          id: data.id,
+          warnings,
+          truncations,
+          estimatedTotalTokens: data.estimatedTotalTokens ?? 0,
+        });
+        setIsLoading(false);
+        return;
+      }
+
       router.push(`/resumes/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "上传失败，请重试");
@@ -236,6 +261,42 @@ export default function HomePage() {
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive animate-fade-in">
             {error}
+          </div>
+        )}
+
+        {/* Length-guard banner — surfaced when the server truncated input or
+            estimated cost exceeded a soft threshold. Forces the user to
+            acknowledge before continuing to the detail page. */}
+        {pending && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm space-y-2 animate-fade-in">
+            <div className="font-semibold text-amber-900">⚠️ 上传成功但请注意</div>
+            {pending.truncations.map((t, i) => (
+              <p key={`t-${i}`} className="text-red-700">{t}</p>
+            ))}
+            {pending.warnings.map((w, i) => (
+              <p key={`w-${i}`} className="text-amber-800">{w}</p>
+            ))}
+            {pending.estimatedTotalTokens > 0 && (
+              <p className="text-amber-800">
+                10 个模块预计共消耗 ~<span className="font-mono font-semibold">{pending.estimatedTotalTokens.toLocaleString()}</span> tokens（粗略估算）
+              </p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => router.push(`/resumes/${pending.id}`)}
+                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                我知道了，继续
+              </button>
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+              >
+                取消
+              </button>
+            </div>
           </div>
         )}
 

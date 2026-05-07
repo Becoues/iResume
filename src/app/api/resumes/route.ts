@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { extractTextFromPdf } from "@/lib/pdf";
 import { autoDetectTag } from "@/lib/auto-tag";
+import { checkAndTruncateInputs, PDF_ABSOLUTE_MAX_CHARS } from "@/lib/limits";
 
 /**
  * GET /api/resumes
@@ -163,16 +164,37 @@ export async function POST(request: Request) {
       );
     }
 
+    // Refuse absurdly large PDFs outright — likely garbage / scanned book / etc.
+    if (pdfText.length > PDF_ABSOLUTE_MAX_CHARS) {
+      return NextResponse.json(
+        {
+          error: `简历文本过长 (${pdfText.length} 字符，上限 ${PDF_ABSOLUTE_MAX_CHARS})。请确认这是一份简历而不是其他文档。`,
+        },
+        { status: 413 }
+      );
+    }
+
+    // Soft caps: truncate to safe length, accumulate warnings
+    const checked = checkAndTruncateInputs(pdfText, jdText);
+
     const resume = await prisma.resume.create({
       data: {
         filename: file.name,
-        pdfText,
-        jdText,
+        pdfText: checked.pdfText,
+        jdText: checked.jdText,
         status: "uploaded",
       },
     });
 
-    return NextResponse.json(resume, { status: 201 });
+    return NextResponse.json(
+      {
+        ...resume,
+        warnings: checked.warnings,
+        truncations: checked.truncations,
+        estimatedTotalTokens: checked.estimatedTotalTokens,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("POST /api/resumes failed:", error);
     return NextResponse.json(
