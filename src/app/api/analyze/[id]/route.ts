@@ -165,17 +165,43 @@ export async function POST(
 
       const results = await runWithConcurrency<ModuleResult>(
         tasks.map(({ module: mod, prompt }) => async () => {
-          try {
-            const result = await completion(prompt.system, prompt.user, abortCtl.signal);
+          // 单次尝试：调 LLM → 解析 JSON → schema 校验。
+          // 校验失败时返回 { ok: false, error }，由外层决定是否再来一次。
+          const attempt = async (extraHint?: string) => {
+            const userMessage = extraHint
+              ? `${prompt.user}\n\n# 上一次输出存在格式问题，请严格修正后重新输出\n${extraHint}`
+              : prompt.user;
+            const result = await completion(prompt.system, userMessage, abortCtl.signal);
             aggregateUsage = addUsage(aggregateUsage, result.usage);
             runModel = result.model;
             const parsed = extractAndParseJSON(result.text);
-
-            // Schema-validate the LLM output against this module's envelope.
-            // On failure, treat as a module error (isolated per-module retry).
             const validation = validateModuleOutput(mod.key, parsed);
+            return validation;
+          };
+
+          try {
+            let validation = await attempt();
+
+            // schema 校验失败时单模块再试 1 次，把错误回灌为提示。
+            // 网络/HTTP 类错误已在 completion() 内通过 withRetry 处理，这里仅兜底「内容形态」错误。
             if (!validation.ok) {
-              console.error(`Module ${mod.key} schema validation failed:`, validation.error);
+              console.warn(`Module ${mod.key} schema validation failed, retrying once:`, validation.error);
+              const hint = `校验错误信息（仅供你修正格式参考）：${validation.error}\n请确保 JSON 结构与字段类型严格符合系统提示中的 "JSON输出结构" 示例。`;
+              try {
+                validation = await attempt(hint);
+              } catch (retryErr) {
+                if (isAbortError(retryErr) || abortCtl.signal.aborted) {
+                  return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: "已取消" };
+                }
+                const msg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                console.error(`Module ${mod.key} retry failed for resume ${params.id}:`, retryErr);
+                await safeWrite(`data: [FAIL:${mod.key}]\n\n`);
+                return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: msg };
+              }
+            }
+
+            if (!validation.ok) {
+              console.error(`Module ${mod.key} schema validation failed after retry:`, validation.error);
               await safeWrite(`data: [FAIL:${mod.key}]\n\n`);
               return { key: mod.key, outputKeys: mod.outputKeys, status: "error", error: validation.error };
             }

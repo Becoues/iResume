@@ -363,7 +363,9 @@ function buildAssessmentFrameworkPrompt(): string {
 根据简历内容，构建候选人的评估框架。
 
 ## 评估框架（assessmentFramework）
-- weights: 各评估维度的权重分配及原因，至少包含4个维度，每个包含 dimension、weight（0-1浮点数）、reason
+- weights: 各评估维度的权重分配及原因，至少包含4个维度，每个包含 dimension、weight、reason
+  - weight 必须是字符串类型，内容为 0-1 之间的小数文本，例 "0.30"，禁止输出数字字面量
+  - 全部 weight 之和应约等于 1
 - topStrengths: 候选人最突出的3个优势
 - topRisks: 候选人最大的3个风险点
 - topVerificationPoints: 面试中最需要优先验证的3个点
@@ -376,7 +378,7 @@ ${JSON_RULES}
 
 {
   "assessmentFramework": {
-    "weights": [{ "dimension": "...", "weight": 0.0, "reason": "..." }],
+    "weights": [{ "dimension": "...", "weight": "0.30", "reason": "..." }],
     "topStrengths": ["..."],
     "topRisks": ["..."],
     "topVerificationPoints": ["..."]
@@ -405,7 +407,7 @@ function buildTechnicalQuestionsPrompt(): string {
 - level: "basic" | "intermediate" | "expert"
 - question: 具体问题（结合候选人简历中的技术栈）
 - examPoint: 考察要点
-- expectedPoints: 期望候选人回答的关键点列表
+- expectedPoints: 期望候选人回答的关键点，**必须是字符串类型**，多个要点用中文顿号"、"分隔（例 "线程模型、GIL 影响、调度策略"）；**禁止输出 JSON 数组**
 - followUp: 追问方向
 
 问题设计原则：
@@ -421,7 +423,7 @@ ${JSON_RULES}
 
 {
   "technicalQuestions": [
-    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": ["..."], "followUp": "..." }
+    { "id": 1, "level": "basic|intermediate|expert", "question": "...", "examPoint": "...", "expectedPoints": "要点1、要点2、要点3", "followUp": "..." }
   ]
 }`;
 }

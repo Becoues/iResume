@@ -118,10 +118,17 @@ const ProjectDeepAnalysis = z.object({
   mustAskQuestions: z.array(z.string()).optional().default([]),
 }).passthrough();
 
+// LLM 偶尔把 weight 输出为数字（0.3）而非字符串（"0.3"）；用 union 兼容并归一化为 string。
+const WeightField = z
+  .union([z.string(), z.number()])
+  .transform((v) => (typeof v === "number" ? String(v) : v))
+  .optional()
+  .default("");
+
 const AssessmentFramework = z.object({
   weights: z.array(z.object({
     dimension: z.string(),
-    weight: z.string().optional().default(""),
+    weight: WeightField,
     reason: z.string().optional().default(""),
   }).passthrough()).optional().default([]),
   topStrengths: z.array(z.string()).optional().default([]),
@@ -129,12 +136,19 @@ const AssessmentFramework = z.object({
   topVerificationPoints: z.array(z.string()).optional().default([]),
 }).passthrough();
 
+// LLM 偶尔把 expectedPoints 输出为数组而非字符串；用 union 兼容并以顿号拼接。
+const ExpectedPointsField = z
+  .union([z.string(), z.array(z.string())])
+  .transform((v) => (Array.isArray(v) ? v.filter(Boolean).join("、") : v))
+  .optional()
+  .default("");
+
 const TechnicalQuestion = z.object({
   id: z.coerce.number().optional(),
   level: z.string(),
   question: z.string(),
   examPoint: z.string().optional().default(""),
-  expectedPoints: z.string().optional().default(""),
+  expectedPoints: ExpectedPointsField,
   followUp: z.string().optional().default(""),
 }).passthrough();
 

@@ -397,6 +397,11 @@ export default function ResumePage({
   );
   const streamRef = useRef<HTMLPreElement>(null);
 
+  // 后台自动重试：每个模块本会话最多自动重试 1 次（避免循环）。
+  // 用 ref 而非 state，跨 effect 持有但不触发重渲染。
+  const autoRetriedKeysRef = useRef<Set<string>>(new Set());
+  const [autoRetrying, setAutoRetrying] = useState(false);
+
   // Active section for sidebar navigation
   const [activeSection, setActiveSection] = useState<string>("candidateProfile");
 
@@ -726,6 +731,8 @@ export default function ResumePage({
       const mod = ANALYSIS_MODULES.find((m) => m.key === moduleKey);
       if (!mod) return;
       const ids = mod.id === 0 ? [0] : [0, mod.id];
+      // 用户手动触发的重试，重置该模块的自动重试计数，允许后续自动再试。
+      autoRetriedKeysRef.current.delete(moduleKey);
       await runAnalysis(ids);
     },
     [runAnalysis],
@@ -757,6 +764,39 @@ export default function ResumePage({
       return [];
     }
   }, [resume?.moduleStatus]);
+
+  // 后台自动重试失败模块：本会话每个模块最多自动重试 1 次。
+  // 触发条件：分析已完成（非进行中）+ 存在失败模块 + 至少有一个模块未自动重试过。
+  // 通过 localStorage 开关 `autoRetryFailedModules` 关闭，默认开启。
+  useEffect(() => {
+    if (analyzing || autoRetrying) return;
+    if (resume?.status !== "completed") return;
+    if (failedModules.length === 0) return;
+
+    if (typeof window !== "undefined") {
+      const flag = window.localStorage.getItem("autoRetryFailedModules");
+      if (flag === "off") return;
+    }
+
+    const toRetry = failedModules
+      .map((m) => m.key)
+      .filter((k) => !autoRetriedKeysRef.current.has(k));
+    if (toRetry.length === 0) return;
+
+    toRetry.forEach((k) => autoRetriedKeysRef.current.add(k));
+
+    const ids = Array.from(
+      new Set([
+        0,
+        ...toRetry
+          .map((k) => ANALYSIS_MODULES.find((m) => m.key === k)?.id)
+          .filter((v): v is number => typeof v === "number"),
+      ]),
+    );
+
+    setAutoRetrying(true);
+    runAnalysis(ids).finally(() => setAutoRetrying(false));
+  }, [resume?.status, failedModules, analyzing, autoRetrying, runAnalysis]);
 
   // -----------------------------------------------------------------------
   // Loading / Error states
@@ -1131,7 +1171,9 @@ export default function ResumePage({
               <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-amber-900 mb-2">
-                  有 {failedModules.length} 个模块未成功
+                  {autoRetrying
+                    ? `正在后台自动重试 ${failedModules.length} 个模块…`
+                    : `有 ${failedModules.length} 个模块未成功`}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {failedModules.map((m) => (
@@ -1145,7 +1187,9 @@ export default function ResumePage({
                     >
                       <span>{m.label}</span>
                       <span className="text-amber-500">·</span>
-                      <span className="text-amber-700">{analyzing ? "重试中..." : "重试此模块"}</span>
+                      <span className="text-amber-700">
+                        {analyzing ? "重试中..." : autoRetrying ? "自动重试中..." : "重试此模块"}
+                      </span>
                     </button>
                   ))}
                 </div>
