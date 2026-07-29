@@ -19,7 +19,7 @@ npx prisma generate  # Regenerate Prisma client (auto-runs on npm install)
 ### Tech Stack & Constraints
 - **Next.js 14** (NOT 15): `params` is a plain object, not a Promise. Config must be `.mjs`.
 - **Prisma 5.x** (NOT v7): different config format. SQLite as database.
-- **LLM**: OpenAI SDK → multi-provider support via `PROVIDER_BASE_URLS` in `openai.ts`. Providers: AiHubMix (`aihubmix.com/v1`), DeerAPI (`api.deerapi.com/v1`). Models: gemini-3.1-pro-preview, claude-sonnet-4-5, gpt-5.4, gemini-3.1-flash-lite-preview, qwen3.5-27b, deepseek-v3.2.
+- **LLM**: OpenAI SDK against CometAPI (`https://api.cometapi.com/v1`), an aggregator that serves every model over the OpenAI Chat Completions protocol — one key, one base URL, no per-vendor protocol branching. Provider map lives in `PROVIDER_BASE_URLS` in `openai.ts`. Models: gemini-3.1-pro-preview, claude-sonnet-4-6, gpt-5.4, gemini-3.1-flash-lite-preview, qwen3.5-27b, deepseek-v3.2.
 - **PDF**: pdfjs-dist via `pdfjs-dist/legacy/build/pdf.mjs`. Requires `experimental.serverComponentsExternalPackages` in next.config.
 - **UI**: Tailwind CSS 3 + custom shadcn-style components (no Radix dependency). Icons from lucide-react.
 - **Charts**: recharts for radar charts and data visualization.
@@ -30,7 +30,7 @@ npx prisma generate  # Regenerate Prisma client (auto-runs on npm install)
 3. **View**: `/resumes/[id]` — three-column layout (fixed left nav 220px, scrollable content, fixed right 240px)
 
 ### Core Files
-- `src/lib/openai.ts` — OpenAI SDK client: `streamCompletion()` (AsyncGenerator), `testConnection()`. Multi-provider via `PROVIDER_BASE_URLS`. Config priority: DB Settings → env vars.
+- `src/lib/openai.ts` — OpenAI SDK client: `completion()`, `streamCompletion()` (AsyncGenerator), `testConnection()`. Base URL via `PROVIDER_BASE_URLS`. Config priority: DB Settings → env vars (`COMETAPI_API_KEY`).
 - `src/lib/score-utils.ts` — Post-processing: recalculates finalScore from sub-scores with distribution spreading.
 - `src/lib/prompt.ts` — "DNA × Four-Layer Architecture" evaluation framework. Outputs structured JSON matching `ResumeAnalysis` type.
 - `src/lib/types.ts` — All TypeScript interfaces for the 10-section analysis output.
@@ -40,7 +40,7 @@ npx prisma generate  # Regenerate Prisma client (auto-runs on npm install)
 ### Database Models
 - **Resume**: id, filename, pdfText, jdText?, analysisJson?, status (uploaded|analyzing|completed|failed), errorMessage?, recordings[]
 - **Recording**: id, resumeId, filename, duration, data (Bytes/BLOB)
-- **Settings**: singleton (id=1), provider, apiKeyAihubmix, apiKeyDeerapi, model
+- **Settings**: singleton (id=1), provider, apiKeyCometapi, model
 
 ### API Routes
 - `GET/POST /api/resumes` — list / upload
@@ -52,7 +52,7 @@ npx prisma generate  # Regenerate Prisma client (auto-runs on npm install)
 - `POST /api/settings/test-connection` — test LLM connectivity
 
 ### UI Patterns
-- Settings dialog: gear icon on homepage (fixed bottom-right). Provider selector + API key (per-provider caching) + model selection + connection test.
+- Settings dialog: gear icon on homepage (fixed bottom-right). Provider (fixed to CometAPI) + API key + model selection + connection test.
 - API key masking: first 4 + `...` + last 4 on GET. Test-connection resolves masked keys from DB.
 - Favorites: `localStorage` keyed by `favorites-{resumeId}`.
 - Recording: browser `MediaRecorder` API (audio/webm), stored as BLOB in SQLite.

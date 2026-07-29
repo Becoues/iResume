@@ -15,11 +15,13 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const PROVIDERS = [
-  { value: "AiHubMix", label: "AiHubMix", hint: "https://aihubmix.com" },
-  { value: "DeerAPI", label: "DeerAPI (小鹿API)", hint: "https://api.deerapi.com" },
-  { value: "YesCode", label: "YesCode", hint: "https://co.yes.vg" },
-];
+const PROVIDER = {
+  value: "CometAPI",
+  label: "CometAPI",
+  hint: "https://api.cometapi.com",
+};
+
+const DEFAULT_MODEL = "gemini-3.1-pro-preview";
 
 const MODELS = [
   { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" },
@@ -31,16 +33,9 @@ const MODELS = [
 ];
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [provider, setProvider] = useState("AiHubMix");
-  const [model, setModel] = useState("gemini-3.1-pro-preview");
-
-  // Per-provider API key state
-  const [keyAihubmix, setKeyAihubmix] = useState("");
-  const [keyDeerapi, setKeyDeerapi] = useState("");
-  const [keyYescode, setKeyYescode] = useState("");
-  const [maskedKeyAihubmix, setMaskedKeyAihubmix] = useState("");
-  const [maskedKeyDeerapi, setMaskedKeyDeerapi] = useState("");
-  const [maskedKeyYescode, setMaskedKeyYescode] = useState("");
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [apiKey, setApiKey] = useState("");
+  const [maskedKey, setMaskedKey] = useState("");
   const [isApiKeyEditing, setIsApiKeyEditing] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -51,24 +46,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     error?: string;
   } | null>(null);
 
-  // Current key getter/setter based on active provider
-  const currentKey = provider === "YesCode" ? keyYescode : provider === "DeerAPI" ? keyDeerapi : keyAihubmix;
-  const currentMaskedKey = provider === "YesCode" ? maskedKeyYescode : provider === "DeerAPI" ? maskedKeyDeerapi : maskedKeyAihubmix;
-  const setCurrentKey = provider === "YesCode" ? setKeyYescode : provider === "DeerAPI" ? setKeyDeerapi : setKeyAihubmix;
-
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/settings");
       const data = await res.json();
-      setProvider(data.provider || "AiHubMix");
-      setKeyAihubmix(data.apiKeyAihubmix || "");
-      setKeyDeerapi(data.apiKeyDeerapi || "");
-      setKeyYescode(data.apiKeyYescode || "");
-      setMaskedKeyAihubmix(data.apiKeyAihubmix || "");
-      setMaskedKeyDeerapi(data.apiKeyDeerapi || "");
-      setMaskedKeyYescode(data.apiKeyYescode || "");
-      setModel(data.model || "gemini-3.1-pro-preview");
+      setApiKey(data.apiKeyCometapi || "");
+      setMaskedKey(data.apiKeyCometapi || "");
+      setModel(data.model || DEFAULT_MODEL);
       setIsApiKeyEditing(false);
     } finally {
       setIsLoading(false);
@@ -82,22 +67,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }, [open, loadSettings]);
 
-  const handleProviderChange = (newProvider: string) => {
-    setProvider(newProvider);
-    setIsApiKeyEditing(false);
-    setTestResult(null);
-  };
-
   const handleApiKeyFocus = () => {
-    if (currentKey.includes("...") || currentKey.includes("••")) {
-      setCurrentKey("");
+    if (apiKey.includes("...") || apiKey.includes("••")) {
+      setApiKey("");
       setIsApiKeyEditing(true);
     }
   };
 
   const handleApiKeyBlur = () => {
-    if (isApiKeyEditing && currentKey === "") {
-      setCurrentKey(currentMaskedKey);
+    if (isApiKeyEditing && apiKey === "") {
+      setApiKey(maskedKey);
       setIsApiKeyEditing(false);
     }
   };
@@ -109,7 +88,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const res = await fetch("/api/settings/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: currentKey, model, provider }),
+        body: JSON.stringify({ apiKey, model, provider: PROVIDER.value }),
       });
       const data = await res.json();
       setTestResult(data);
@@ -127,28 +106,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider,
-          apiKeyAihubmix: keyAihubmix,
-          apiKeyDeerapi: keyDeerapi,
-          apiKeyYescode: keyYescode,
+          provider: PROVIDER.value,
+          apiKeyCometapi: apiKey,
           model,
         }),
       });
       const data = await res.json();
-      setKeyAihubmix(data.apiKeyAihubmix || "");
-      setKeyDeerapi(data.apiKeyDeerapi || "");
-      setKeyYescode(data.apiKeyYescode || "");
-      setMaskedKeyAihubmix(data.apiKeyAihubmix || "");
-      setMaskedKeyDeerapi(data.apiKeyDeerapi || "");
-      setMaskedKeyYescode(data.apiKeyYescode || "");
+      setApiKey(data.apiKeyCometapi || "");
+      setMaskedKey(data.apiKeyCometapi || "");
       setIsApiKeyEditing(false);
       onOpenChange(false);
     } finally {
       setIsSaving(false);
     }
   };
-
-  const providerHint = PROVIDERS.find((p) => p.value === provider)?.hint || "";
 
   const selectClasses =
     "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -170,15 +141,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <div className="space-y-1.5">
               <label className="text-sm font-medium">API 渠道</label>
               <select
-                value={provider}
-                onChange={(e) => handleProviderChange(e.target.value)}
-                className={selectClasses}
+                value={PROVIDER.value}
+                disabled
+                className={`${selectClasses} disabled:opacity-70`}
               >
-                {PROVIDERS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
+                <option value={PROVIDER.value}>{PROVIDER.label}</option>
               </select>
             </div>
 
@@ -187,17 +154,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <label className="text-sm font-medium">API Key</label>
               <input
                 type="text"
-                value={currentKey}
+                value={apiKey}
                 onFocus={handleApiKeyFocus}
                 onBlur={handleApiKeyBlur}
-                onChange={(e) => setCurrentKey(e.target.value)}
+                onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-xxxxxxxx..."
                 className={selectClasses}
               />
               <p className="text-xs text-muted-foreground">
-                {currentMaskedKey && !isApiKeyEditing
+                {maskedKey && !isApiKeyEditing
                   ? "已配置密钥，点击输入框可重新填写"
-                  : `从 ${provider} 获取 Key：${providerHint}`}
+                  : `从 ${PROVIDER.label} 获取 Key：${PROVIDER.hint}`}
               </p>
             </div>
 

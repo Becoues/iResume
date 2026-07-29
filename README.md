@@ -48,16 +48,15 @@
 
 - **Node.js** 18+（推荐 20+）
 - **npm**（随 Node.js 一起安装）
-- 一个 **AiHubMix** 或 **DeerAPI** 的 API Key
+- 一个 **CometAPI** 的 API Key
 
 ### 第一步：获取 API Key
 
-本项目支持以下 API 渠道（均兼容 OpenAI 协议），任选其一：
+本项目使用 **CometAPI** 作为统一的 API 聚合渠道（兼容 OpenAI 协议）：
 
 | 渠道 | 地址 | 说明 |
 |------|------|------|
-| **AiHubMix** | [aihubmix.com](https://aihubmix.com) | 默认渠道 |
-| **DeerAPI** (小鹿API) | [deerapi.com](https://www.deerapi.com) | 国内友好 |
+| **CometAPI** | [api.cometapi.com](https://api.cometapi.com) | 统一聚合渠道，一个 Key 调用全部模型 |
 
 注册账号后，在控制台创建 API Key（以 `sk-` 开头），保存好后面要用。
 
@@ -65,13 +64,13 @@
 | 模型 | 说明 |
 |------|------|
 | `gemini-3.1-pro-preview` | Google Gemini（默认，性价比高） |
-| `claude-sonnet-4-5` | Anthropic Claude |
+| `claude-sonnet-4-6` | Anthropic Claude |
 | `gpt-5.4` | OpenAI GPT |
 | `gemini-3.1-flash-lite-preview` | Google Gemini Flash Lite（速度快） |
 | `qwen3.5-27b` | 通义千问（速度快） |
 | `deepseek-v3.2` | DeepSeek V3.2（速度快） |
 
-> **想使用其他 API 提供商？** 本项目内置 AiHubMix 和 DeerAPI 支持。如需接入其他提供商（如 OpenRouter、自建代理等），可自行修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 和相关逻辑，只要兼容 OpenAI API 协议即可。
+> **想使用其他 API 提供商？** 本项目默认接入 CometAPI。如需接入其他提供商（如 OpenRouter、自建代理等），可自行修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 映射，只要兼容 OpenAI Chat Completions 协议即可。
 
 ### 第二步：克隆项目
 
@@ -101,7 +100,7 @@ cp .env.example .env.local
 DATABASE_URL="file:./prisma/dev.db"
 
 # API Key（可选，也可以在界面中配置）
-AIHUBMIX_API_KEY=sk-你的Key粘贴到这里
+COMETAPI_API_KEY=sk-你的Key粘贴到这里
 ```
 
 > 如果不需要通过环境变量配置 API Key，也**必须保留 `DATABASE_URL` 这一行**。
@@ -110,8 +109,8 @@ AIHUBMIX_API_KEY=sk-你的Key粘贴到这里
 
 启动项目后，点击页面右下角的 **齿轮按钮**，在设置面板中：
 
-1. 选择 **API 渠道**（AiHubMix 或 DeerAPI）
-2. 填写 **API Key**（对应渠道的 `sk-` 开头的 Key）
+1. 确认 **API 渠道** 为 CometAPI
+2. 填写 **API Key**（CometAPI 的 `sk-` 开头的 Key）
 3. 选择 **模型**
 4. 点击 **测试连接** 验证配置是否正确
 5. 点击 **应用** 保存
@@ -203,7 +202,7 @@ docker run -d --name iresume -p 3000:3000 -v ./prisma:/app/prisma iresume
 | [Tailwind CSS 3](https://tailwindcss.com) | 原子化 CSS 样式 |
 | [Prisma 5](https://www.prisma.io) | 数据库 ORM |
 | [SQLite](https://www.sqlite.org) | 轻量级本地数据库，零配置 |
-| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（支持 AiHubMix / DeerAPI 多渠道） |
+| [OpenAI SDK](https://github.com/openai/openai-node) | LLM 接口调用（通过 CometAPI 聚合渠道） |
 | [pdfjs-dist](https://github.com/nickolasg/pdfjs-dist) | PDF 文本提取 |
 | [Recharts](https://recharts.org) | 雷达图等数据可视化 |
 | [Lucide React](https://lucide.dev) | 图标库 |
@@ -246,12 +245,11 @@ resume-analyzer/
 
 ## 自定义 API 提供商
 
-内置 AiHubMix 和 DeerAPI 两个渠道。如需新增其他 OpenAI 兼容的 API 提供商，在 `src/lib/openai.ts` 的 `PROVIDER_BASE_URLS` 中添加映射即可：
+默认接入 CometAPI 渠道。如需新增其他 OpenAI 兼容的 API 提供商，在 `src/lib/openai.ts` 的 `PROVIDER_BASE_URLS` 中添加映射即可：
 
 ```typescript
 const PROVIDER_BASE_URLS: Record<string, string> = {
-  AiHubMix: "https://aihubmix.com/v1",
-  DeerAPI: "https://api.deerapi.com/v1",
+  CometAPI: "https://api.cometapi.com/v1",
   // 新增你的渠道：
   MyProvider: "https://your-api-provider.com/v1",
 };
@@ -270,8 +268,8 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
 ### Q: 测试连接失败？
 
 - 检查 Key 是否以 `sk-` 开头
-- 确认 AiHubMix 账户余额充足
-- 确保网络可以访问 `https://aihubmix.com`
+- 确认 CometAPI 账户余额充足
+- 确保网络可以访问 `https://api.cometapi.com`
 
 ### Q: 支持哪些格式的简历？
 
@@ -287,7 +285,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
 
 ### Q: 想接入其他 API 提供商？
 
-本项目内置 [AiHubMix](https://aihubmix.com) 和 [DeerAPI](https://www.deerapi.com) 支持。如需接入其他提供商（OpenRouter、自建代理等），修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 映射即可，只要兼容 OpenAI Chat Completions API（`/v1/chat/completions`）协议。你也可以直接让 AI 帮你改这个文件。
+本项目默认接入 [CometAPI](https://api.cometapi.com)。如需接入其他提供商（OpenRouter、自建代理等），修改 `src/lib/openai.ts` 中的 `PROVIDER_BASE_URLS` 映射即可，只要兼容 OpenAI Chat Completions API（`/v1/chat/completions`）协议。你也可以直接让 AI 帮你改这个文件。
 
 ---
 

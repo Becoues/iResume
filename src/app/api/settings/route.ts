@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "@/lib/openai";
 
 export const dynamic = "force-dynamic";
 
@@ -8,98 +9,57 @@ function maskApiKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
+function isMasked(key: unknown): boolean {
+  return typeof key !== "string" || key.includes("...") || key.includes("••");
+}
+
 export async function GET() {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } });
 
   if (!settings) {
     return NextResponse.json({
-      provider: "AiHubMix",
-      apiKeyAihubmix: "",
-      apiKeyDeerapi: "",
-      apiKeyYescode: "",
-      model: "gemini-3.1-pro-preview",
+      provider: DEFAULT_PROVIDER,
+      apiKeyCometapi: "",
+      model: DEFAULT_MODEL,
     });
   }
 
   return NextResponse.json({
     provider: settings.provider,
-    apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
-    apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
-    apiKeyYescode: maskApiKey(settings.apiKeyYescode),
+    apiKeyCometapi: maskApiKey(settings.apiKeyCometapi),
     model: settings.model,
   });
 }
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { provider, apiKeyAihubmix, apiKeyDeerapi, apiKeyYescode, model } = body as {
-    provider: string;
-    apiKeyAihubmix?: string;
-    apiKeyDeerapi?: string;
-    apiKeyYescode?: string;
+  const { provider, apiKeyCometapi, model } = body as {
+    provider?: string;
+    apiKeyCometapi?: string;
     model: string;
   };
 
-  // Build update data — only overwrite keys that are not masked
-  const data: Record<string, string> = { provider, model };
-
-  if (
-    typeof apiKeyAihubmix === "string" &&
-    !apiKeyAihubmix.includes("...") &&
-    !apiKeyAihubmix.includes("••")
-  ) {
-    data.apiKeyAihubmix = apiKeyAihubmix;
-  }
-
-  if (
-    typeof apiKeyDeerapi === "string" &&
-    !apiKeyDeerapi.includes("...") &&
-    !apiKeyDeerapi.includes("••")
-  ) {
-    data.apiKeyDeerapi = apiKeyDeerapi;
-  }
-
-  if (
-    typeof apiKeyYescode === "string" &&
-    !apiKeyYescode.includes("...") &&
-    !apiKeyYescode.includes("••")
-  ) {
-    data.apiKeyYescode = apiKeyYescode;
-  }
+  // A masked key means "keep the stored key".
+  const resolvedKey = isMasked(apiKeyCometapi) ? undefined : apiKeyCometapi;
 
   const settings = await prisma.settings.upsert({
     where: { id: 1 },
-    update: data,
+    update: {
+      provider: provider || DEFAULT_PROVIDER,
+      model,
+      ...(resolvedKey !== undefined ? { apiKeyCometapi: resolvedKey } : {}),
+    },
     create: {
       id: 1,
-      provider,
+      provider: provider || DEFAULT_PROVIDER,
       model,
-      apiKeyAihubmix:
-        typeof apiKeyAihubmix === "string" &&
-        !apiKeyAihubmix.includes("...") &&
-        !apiKeyAihubmix.includes("••")
-          ? apiKeyAihubmix
-          : "",
-      apiKeyDeerapi:
-        typeof apiKeyDeerapi === "string" &&
-        !apiKeyDeerapi.includes("...") &&
-        !apiKeyDeerapi.includes("••")
-          ? apiKeyDeerapi
-          : "",
-      apiKeyYescode:
-        typeof apiKeyYescode === "string" &&
-        !apiKeyYescode.includes("...") &&
-        !apiKeyYescode.includes("••")
-          ? apiKeyYescode
-          : "",
+      apiKeyCometapi: resolvedKey ?? "",
     },
   });
 
   return NextResponse.json({
     provider: settings.provider,
-    apiKeyAihubmix: maskApiKey(settings.apiKeyAihubmix),
-    apiKeyDeerapi: maskApiKey(settings.apiKeyDeerapi),
-    apiKeyYescode: maskApiKey(settings.apiKeyYescode),
+    apiKeyCometapi: maskApiKey(settings.apiKeyCometapi),
     model: settings.model,
   });
 }
