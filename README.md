@@ -6,7 +6,9 @@
 
 - PDF、DOCX、DOC、TXT、Markdown、RTF、PNG、JPEG、WebP；扫描 PDF 和图片使用本地中英文 OCR。
 - 简历加可选 JD，一次启动快速简报；需要时再生成深入准备。
-- 原文依据、复制问题、打印简报、历史检索与分页。
+- 重点亮点、能力观察、项目职责/挑战/做法/结果、分优先级问题与追问。
+- 固定章节目录、当前章节定位、原文依据、复制问题、打印简报、历史检索与分页。
+- 已有简报可直接使用新的高对比度阅读布局；重新生成后补充新分析字段。
 - CometAPI、OpenAI 兼容接口、AWS Bedrock（Runtime / Converse 与 Mantle / Responses 自动路由，区域与 inference profile、AWS 默认凭据链或 Bearer API key）。
 - 持久化任务、并发去重、失败保留原结果；不再提供语音录制或面试中功能。
 - 生产访问口令、HTTP-only 会话、设置密钥加密存储。模型凭据不会返回浏览器。

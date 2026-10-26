@@ -10,6 +10,8 @@ export interface PrepQuestion {
   evidence: EvidenceItem;
   listenFor: string[];
   followUps: string[];
+  priority?: "high" | "medium";
+  dimension?: string;
 }
 export interface CandidateBrief {
   version: 1;
@@ -21,10 +23,25 @@ export interface CandidateBrief {
   };
   summary: string;
   fitSummary: string;
+  highlights?: {
+    title: string;
+    detail: string;
+    evidence: EvidenceItem;
+  }[];
+  capabilities?: {
+    dimension: string;
+    observation: string;
+    verification: string;
+    evidence: EvidenceItem;
+  }[];
   experiences: {
     title: string;
     relevance: string;
     evidence: EvidenceItem;
+    contribution?: string;
+    challenge?: string;
+    approach?: string;
+    results?: string;
   }[];
   verificationPoints: {
     title: string;
