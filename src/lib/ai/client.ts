@@ -9,6 +9,7 @@ import {
   type RuntimeConfig,
 } from "./config";
 import { parseJson } from "../brief-validation";
+import { mantleEndpoint } from "./bedrock-routing";
 
 export class ProviderError extends Error {}
 export function publicError(error: unknown): string {
@@ -28,6 +29,40 @@ export async function completeJson(
   assertConfigured(config);
   try {
     if (config.provider === "Bedrock") {
+      const endpoint = mantleEndpoint(config.model, config.region);
+      if (endpoint) {
+        if (config.authMode !== "apiKey" || !config.bedrockApiKey) {
+          throw new ConfigurationError(
+            "该 OpenAI 模型 ID 使用 Bedrock Mantle，请选择 Bedrock API Key 认证；使用 AWS 默认凭据时请填写 Runtime 的推理配置 ID 或 ARN",
+          );
+        }
+        const client = new OpenAI({
+          apiKey: config.bedrockApiKey,
+          baseURL: endpoint,
+          maxRetries: 0,
+          timeout: 90_000,
+        });
+        const response = await client.responses.create(
+          {
+            model: config.model,
+            instructions: system,
+            input: prompt,
+            // Reasoning also consumes the output budget. 64 tokens is too small
+            // even for a connection probe on these models.
+            max_output_tokens: Math.max(maxTokens, 1024),
+            reasoning: { effort: "low" },
+            store: false,
+          },
+          { signal },
+        );
+        if (response.status === "incomplete") {
+          throw new ProviderError("模型输出未完成，请重试或换用其他模型");
+        }
+        if (!response.output_text) {
+          throw new ProviderError("模型没有返回可读取的文本");
+        }
+        return response.output_text;
+      }
       const client = new BedrockRuntimeClient({
         region: config.region,
         maxAttempts: 1,

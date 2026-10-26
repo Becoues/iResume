@@ -7,7 +7,7 @@
 - PDF、DOCX、DOC、TXT、Markdown、RTF、PNG、JPEG、WebP；扫描 PDF 和图片使用本地中英文 OCR。
 - 简历加可选 JD，一次启动快速简报；需要时再生成深入准备。
 - 原文依据、复制问题、打印简报、历史检索与分页。
-- CometAPI、OpenAI 兼容接口、AWS Bedrock（Converse、区域与 inference profile、AWS 默认凭据链或 Bearer API key）。
+- CometAPI、OpenAI 兼容接口、AWS Bedrock（Runtime / Converse 与 Mantle / Responses 自动路由，区域与 inference profile、AWS 默认凭据链或 Bearer API key）。
 - 持久化任务、并发去重、失败保留原结果；不再提供语音录制或面试中功能。
 - 生产访问口令、HTTP-only 会话、设置密钥加密存储。模型凭据不会返回浏览器。
 
@@ -32,7 +32,7 @@ npm run dev
 - `AI_MODEL`：默认模型 ID；Bedrock 也可填 inference profile ID/ARN。
 - `COMETAPI_API_KEY` / `OPENAI_API_KEY`：对应兼容服务凭据。
 - `AI_BASE_URL`：兼容接口地址，默认按服务商选择。
-- `AWS_REGION` / `AWS_BEARER_TOKEN_BEDROCK`：Bedrock 区域和可选 API key；也支持标准 AWS 凭据链。
+- `AWS_REGION` / `AWS_BEARER_TOKEN_BEDROCK`：Bedrock 区域和可选 API key；也支持标准 AWS 凭据链。裸 `openai.*` 模型 ID 自动走 Mantle / Responses，需要 API key；`us.` / `global.` 推理配置或 ARN 保留 Runtime / Converse。
 - `APP_SECRET`：至少 32 字符的随机密钥，保护会话和已存模型密钥；务必备份，切勿随意轮换。
 - `APP_PASSWORD`：生产访问口令；生产环境缺失时拒绝访问。
 - `APP_ORIGIN`：浏览器访问的完整 origin，例如 `https://resume.example.com`。
