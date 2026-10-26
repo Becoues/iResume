@@ -82,6 +82,14 @@ export async function extractResume(file: ResumeFile): Promise<ExtractedResume> 
     return { text: validateText(text), filename: name, sourceType: ext, warnings };
   } catch (error) {
     if (error instanceof IngestionError) throw error;
+    const failure = error as { name?: string; code?: string };
+    console.error("[resume-parser]", { format: ext, name: failure?.name, code: failure?.code });
+    if (failure?.code === "ERR_INVALID_ARG_TYPE" || failure?.code === "MODULE_NOT_FOUND" || failure?.code === "ERR_MODULE_NOT_FOUND") {
+      throw new IngestionError("文件解析服务暂时不可用，请稍后重试或粘贴简历正文。", 503);
+    }
+    if (ext === "pdf" && failure?.name === "PasswordException") {
+      throw new IngestionError("这份 PDF 需要密码，请先解除密码保护再上传，或粘贴简历正文。");
+    }
     throw new IngestionError(`无法读取这份 ${ext.toUpperCase()} 简历。文件可能损坏、加密或格式不匹配，请重新导出或粘贴正文。`);
   }
 }

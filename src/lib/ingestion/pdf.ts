@@ -19,7 +19,10 @@ export async function extractPdf(buffer: Buffer): Promise<{ text: string; warnin
   const globals = globalThis as unknown as Record<string, unknown>;
   globals.DOMMatrix ??= DOMMatrix; globals.ImageData ??= ImageData; globals.Path2D ??= Path2D;
   const { getDocument, OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const dir = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  // Use Node resolution at runtime. Webpack rewrites a direct require.resolve
+  // into a numeric module ID, which is not a filesystem path in production.
+  const runtimeRequire = process.getBuiltinModule("module").createRequire(path.join(process.cwd(), "package.json"));
+  const dir = path.dirname(runtimeRequire.resolve("pdfjs-dist/package.json"));
   const canvasFactory = new CanvasFactory();
   const task = getDocument({ data: new Uint8Array(buffer), useSystemFonts: true,
     cMapUrl: path.join(dir, "cmaps") + "/", cMapPacked: true, standardFontDataUrl: path.join(dir, "standard_fonts") + "/",
