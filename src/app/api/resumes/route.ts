@@ -1,217 +1,88 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { extractTextFromPdf } from "@/lib/pdf";
-import { autoDetectTag } from "@/lib/auto-tag";
-import { checkAndTruncateInputs, PDF_ABSOLUTE_MAX_CHARS } from "@/lib/limits";
+import { getBriefState } from "@/lib/brief-runtime";
+import { extractResume, IngestionError, MAX_FILE_BYTES, parseJd, parsePaste, readBoundedRequest } from "@/lib/ingestion";
+import type { CandidateBrief } from "@/lib/prep-contract";
 
-/**
- * GET /api/resumes
- *
- * Lists all resumes ordered by uploadDate descending.
- * Returns a summary view — full pdfText and analysisJson are excluded.
- * If analysisJson exists, the finalScore is extracted and returned
- * inside a scoreCard object.
- */
-export async function GET() {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 180;
+
+export async function GET(request: Request) {
   try {
+    const query = new URL(request.url).searchParams;
+    const number = (key: string, fallback: number, max: number) => {
+      const value = Number(query.get(key) ?? fallback);
+      return Number.isSafeInteger(value) && value >= 0 ? Math.min(value, max) : fallback;
+    };
+    const limit = Math.max(1, number("limit", 50, 100));
+    const offset = number("offset", 0, 100_000);
     const resumes = await prisma.resume.findMany({
-      orderBy: { uploadDate: "desc" },
-      select: {
-        id: true,
-        filename: true,
-        uploadDate: true,
-        status: true,
-        analysisJson: true,
-        updatedAt: true,
-        tag: true,
-      },
+      orderBy: [{ uploadDate: "desc" }, { id: "desc" }], take: limit, skip: offset,
+      select: { id: true, filename: true, uploadDate: true, updatedAt: true, status: true, tag: true, sourceType: true, briefJson: true, briefStatus: true },
     });
-
-    // Backfill tags for resumes analyzed before auto-tag was added
-    const backfillPromises: Promise<void>[] = [];
-
-    const summaries = resumes.map((resume) => {
-      let scoreCard: {
-        finalScore: number | null;
-        architectureTotal: number | null;
-        dnaTotal: number | null;
-      } | null = null;
-      let candidateName: string | null = null;
-      let techDirection: string | null = null;
-      let experienceYears: string | null = null;
-      let levelMatch: string | null = null;
-      let recommendation: string | null = null;
-
-      if (resume.analysisJson) {
-        try {
-          const analysis = JSON.parse(resume.analysisJson);
-          scoreCard = {
-            finalScore: analysis.scoreCard?.finalScore ?? analysis.finalScore ?? null,
-            architectureTotal: analysis.scoreCard?.architectureTotal ?? null,
-            dnaTotal: analysis.scoreCard?.dnaTotal ?? null,
-          };
-          candidateName = analysis.candidateProfile?.name ?? null;
-          techDirection = analysis.candidateProfile?.techDirection ?? null;
-          experienceYears = analysis.candidateProfile?.experienceYears ?? null;
-          levelMatch = analysis.candidateProfile?.levelMatch ?? null;
-          recommendation = analysis.scoreCard?.recommendation ?? null;
-        } catch {
-          scoreCard = { finalScore: null, architectureTotal: null, dnaTotal: null };
-        }
-      }
-
-      // Auto-tag backfill: if analysis exists but no tag, detect and persist
-      let tag = resume.tag;
-      if (!tag && resume.analysisJson && levelMatch) {
-        const detected = autoDetectTag({
-          pdfText: "",
-          experienceYears,
-          levelMatch,
-        });
-        if (detected) {
-          tag = detected;
-          backfillPromises.push(
-            prisma.resume.update({
-              where: { id: resume.id },
-              data: { tag: detected },
-            }).then(() => {})
-          );
-        }
-      }
-
+    // Let SQLite project only the small historical fields; never load every old report.
+    const legacy = resumes.length ? await prisma.$queryRaw<Array<{ id: string; candidateName: string | null; techDirection: string | null; experienceYears: string | null; levelMatch: string | null; recommendation: string | null; finalScore: number | null; architectureTotal: number | null; dnaTotal: number | null }>>(Prisma.sql`
+      SELECT id,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.candidateProfile.name') END AS candidateName,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.candidateProfile.techDirection') END AS techDirection,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.candidateProfile.experienceYears') END AS experienceYears,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.candidateProfile.levelMatch') END AS levelMatch,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.scoreCard.recommendation') END AS recommendation,
+        CASE WHEN json_valid(analysisJson) THEN COALESCE(json_extract(analysisJson, '$.scoreCard.finalScore'), json_extract(analysisJson, '$.finalScore')) END AS finalScore,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.scoreCard.architectureTotal') END AS architectureTotal,
+        CASE WHEN json_valid(analysisJson) THEN json_extract(analysisJson, '$.scoreCard.dnaTotal') END AS dnaTotal
+      FROM Resume WHERE id IN (${Prisma.join(resumes.map(row => row.id))})
+    `) : [];
+    const oldById = new Map(legacy.map(row => [row.id, row]));
+    const summaries = await Promise.all(resumes.map(async row => {
+      let brief: CandidateBrief | null = null;
+      try { brief = row.briefJson ? JSON.parse(row.briefJson) : null; } catch { /* Preserve corrupt legacy storage without treating it as a brief. */ }
+      const state = row.briefStatus === "running" ? await getBriefState(row.id) : null;
+      if (state) brief = state.brief;
+      const old = oldById.get(row.id);
       return {
-        id: resume.id,
-        filename: resume.filename,
-        uploadDate: resume.uploadDate,
-        status: resume.status,
-        updatedAt: resume.updatedAt,
-        scoreCard,
-        candidateName,
-        techDirection,
-        experienceYears,
-        levelMatch,
-        recommendation,
-        tag,
+        id: row.id, filename: row.filename, uploadDate: row.uploadDate, updatedAt: row.updatedAt,
+        status: row.status, tag: row.tag, sourceType: row.sourceType, briefStatus: state?.briefStatus || row.briefStatus,
+        candidateName: brief?.candidate?.name || old?.candidateName || null,
+        techDirection: brief?.candidate?.headline || old?.techDirection || null,
+        summary: brief?.summary || null,
+        experienceYears: brief?.candidate?.experience || old?.experienceYears || null,
+        levelMatch: old?.levelMatch || null, recommendation: old?.recommendation || null,
+        scoreCard: old?.finalScore != null ? { finalScore: old.finalScore, architectureTotal: old.architectureTotal, dnaTotal: old.dnaTotal } : null,
       };
-    });
-
-    // Fire-and-forget backfill writes
-    if (backfillPromises.length > 0) {
-      Promise.all(backfillPromises).catch((err) =>
-        console.error("Tag backfill failed:", err)
-      );
-    }
-
-    return NextResponse.json(summaries);
-  } catch (error) {
-    console.error("GET /api/resumes failed:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch resumes" },
-      { status: 500 }
-    );
+    }));
+    return NextResponse.json(summaries, { headers: { "X-Page-Limit": String(limit), "X-Page-Offset": String(offset), "X-Has-More": String(resumes.length === limit) } });
+  } catch {
+    return NextResponse.json({ error: "无法读取简历列表，请稍后重试。" }, { status: 500 });
   }
 }
 
-/**
- * POST /api/resumes
- *
- * Accepts multipart/form-data with:
- *   - file (required): A PDF file
- *   - jd   (optional): Job description text
- *
- * Extracts text from the uploaded PDF, persists the record with
- * status "uploaded", and returns the newly created resume.
- */
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
-
-    const file = formData.get("file");
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { error: "A PDF file is required in the 'file' field" },
-        { status: 400 }
-      );
-    }
-
-    if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
-      return NextResponse.json(
-        { error: "Only PDF files are accepted" },
-        { status: 400 }
-      );
-    }
-
-    const jd = formData.get("jd");
-    const jdText = typeof jd === "string" && jd.trim() ? jd.trim() : null;
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    console.log(`[upload] received: name="${file.name}", size=${buffer.length} bytes`);
-
-    let pdfResult;
-    try {
-      pdfResult = await extractTextFromPdf(buffer);
-    } catch (pdfError) {
-      console.error("PDF parse error:", pdfError);
-      return NextResponse.json(
-        { error: "无法解析该 PDF 文件，请确保文件未损坏且包含可提取的文本" },
-        { status: 422 }
-      );
-    }
-
-    const pdfText = pdfResult.text;
-
-    if (pdfResult.isLikelyScanned) {
-      return NextResponse.json(
-        {
-          error: `这是一份扫描版 / 图片 PDF（共 ${pdfResult.numPages} 页，未检测到文字层）。本工具暂不支持 OCR，请先用 ABBYY / Adobe / 在线 OCR 工具转成可复制文字的 PDF 后再上传。`,
-        },
-        { status: 422 }
-      );
-    }
-
-    if (!pdfText || pdfText.trim().length === 0) {
-      return NextResponse.json(
-        { error: `无法从 PDF 提取文本（共 ${pdfResult.numPages} 页，提取结果为空）` },
-        { status: 422 }
-      );
-    }
-
-    // Refuse absurdly large PDFs outright — likely garbage / scanned book / etc.
-    if (pdfText.length > PDF_ABSOLUTE_MAX_CHARS) {
-      return NextResponse.json(
-        {
-          error: `简历文本过长 (${pdfText.length} 字符，上限 ${PDF_ABSOLUTE_MAX_CHARS})。请确认这是一份简历而不是其他文档。`,
-        },
-        { status: 413 }
-      );
-    }
-
-    // Soft caps: truncate to safe length, accumulate warnings
-    const checked = checkAndTruncateInputs(pdfText, jdText);
-
-    const resume = await prisma.resume.create({
-      data: {
-        filename: file.name,
-        pdfText: checked.pdfText,
-        jdText: checked.jdText,
-        status: "uploaded",
-      },
-    });
-
-    return NextResponse.json(
-      {
-        ...resume,
-        warnings: checked.warnings,
-        truncations: checked.truncations,
-        estimatedTotalTokens: checked.estimatedTotalTokens,
-      },
-      { status: 201 },
-    );
+    const contentType = request.headers.get("content-type") || "";
+    let extracted;
+    let jdText: string | null;
+    if (contentType.includes("application/json")) {
+      const body = await readBoundedRequest(request, 1024 * 1024);
+      let input;
+      try { input = JSON.parse(body.toString("utf8")); } catch { throw new IngestionError("提交的文字格式不正确，请重试。", 400); }
+      const pasted = parsePaste(input); extracted = pasted; jdText = pasted.jdText;
+    } else if (contentType.includes("multipart/form-data")) {
+      const body = await readBoundedRequest(request, MAX_FILE_BYTES + 256 * 1024);
+      let form: FormData;
+      try { form = await new Request(request.url, { method: "POST", headers: { "content-type": contentType }, body: new Uint8Array(body) }).formData(); }
+      catch { throw new IngestionError("上传表单不完整，请重新选择文件。", 400); }
+      const file = form.get("file");
+      if (!file || typeof file === "string" || typeof file.arrayBuffer !== "function") throw new IngestionError("请选择一份简历文件。", 400);
+      jdText = parseJd(form.get("jd"));
+      extracted = await extractResume(file);
+    } else throw new IngestionError("请使用文件上传或粘贴简历文字。", 415);
+    const resume = await prisma.resume.create({ data: { filename: extracted.filename, pdfText: extracted.text, jdText, sourceType: extracted.sourceType, status: "uploaded" } });
+    return NextResponse.json({ ...resume, brief: null, briefRun: null, warnings: extracted.warnings }, { status: 201 });
   } catch (error) {
-    console.error("POST /api/resumes failed:", error);
-    return NextResponse.json(
-      { error: "Failed to upload resume" },
-      { status: 500 }
-    );
+    if (error instanceof IngestionError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: "简历保存失败，请稍后重试。" }, { status: 500 });
   }
 }

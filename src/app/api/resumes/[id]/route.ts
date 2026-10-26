@@ -1,84 +1,47 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getBriefState, recoverStaleRuns } from "@/lib/brief-runtime";
+import { deleteRecordingFile } from "@/lib/recordings-storage";
 
-/**
- * GET /api/resumes/[id]
- *
- * Returns the full resume record. If analysisJson is stored as a
- * serialized string, it is parsed into an object before returning.
- */
-export async function GET(
-  _request: Request,
-  { params }: { params: { id: string } }
-) {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(_request: Request, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   try {
-    const resume = await prisma.resume.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!resume) {
-      return NextResponse.json(
-        { error: "Resume not found" },
-        { status: 404 }
-      );
-    }
-
-    let parsedAnalysis: object | null = null;
-    if (resume.analysisJson) {
-      try {
-        parsedAnalysis = JSON.parse(resume.analysisJson);
-      } catch {
-        // If the stored JSON is malformed, return it as-is under a raw key
-        // so the client is aware something went wrong with the parse.
-        parsedAnalysis = null;
-      }
-    }
-
-    return NextResponse.json({
-      ...resume,
-      analysisJson: parsedAnalysis,
-    });
-  } catch (error) {
-    console.error(`GET /api/resumes/${params.id} failed:`, error);
-    return NextResponse.json(
-      { error: "Failed to fetch resume" },
-      { status: 500 }
-    );
+    const resume = await prisma.resume.findUnique({ where: { id: params.id } });
+    if (!resume) return NextResponse.json({ error: "简历不存在。" }, { status: 404 });
+    const state = await getBriefState(params.id);
+    let analysis: unknown = resume.analysisJson;
+    if (resume.analysisJson) { try { analysis = JSON.parse(resume.analysisJson); } catch { /* Keep original legacy data available. */ } }
+    const { briefJson: _briefJson, briefRunId: _briefRunId, ...publicResume } = resume;
+    return NextResponse.json({ ...publicResume, analysisJson: analysis, ...state });
+  } catch {
+    return NextResponse.json({ error: "无法读取简历，请稍后重试。" }, { status: 500 });
   }
 }
 
-/**
- * DELETE /api/resumes/[id]
- *
- * Permanently deletes a resume record by id.
- */
-export async function DELETE(
-  _request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: Request, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   try {
-    const existing = await prisma.resume.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { error: "Resume not found" },
-        { status: 404 }
-      );
-    }
-
-    await prisma.resume.delete({
-      where: { id: params.id },
-    });
-
+    await recoverStaleRuns(params.id);
+    const result = await prisma.$transaction(async tx => {
+      // Acquire SQLite's writer lock before observing job state so start/delete cannot race.
+      const lock = await tx.resume.updateMany({ where: { id: params.id }, data: { id: params.id } });
+      if (!lock.count) return { status: 404, paths: [] as string[] };
+      const resume = await tx.resume.findUniqueOrThrow({ where: { id: params.id }, select: { briefStatus: true } });
+      const active = await tx.analysisRun.count({ where: { resumeId: params.id, status: "running" } });
+      if (resume.briefStatus === "running" || active) return { status: 409, paths: [] as string[] };
+      const recordings = await tx.recording.findMany({ where: { resumeId: params.id }, select: { path: true } });
+      await tx.resume.delete({ where: { id: params.id } });
+      return { status: 200, paths: recordings.flatMap(row => row.path ? [row.path] : []) };
+    }, { timeout: 10_000, maxWait: 10_000 });
+    if (result.status === 404) return NextResponse.json({ error: "简历不存在。" }, { status: 404 });
+    if (result.status === 409) return NextResponse.json({ error: "简报正在生成，请完成后再删除。" }, { status: 409 });
+    await Promise.all(result.paths.map(deleteRecordingFile));
     return NextResponse.json({ success: true, id: params.id });
-  } catch (error) {
-    console.error(`DELETE /api/resumes/${params.id} failed:`, error);
-    return NextResponse.json(
-      { error: "Failed to delete resume" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "删除失败，请稍后重试。" }, { status: 500 });
   }
 }
 
@@ -92,8 +55,9 @@ export async function DELETE(
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params: paramsPromise }: { params: Promise<{ id: string }> }
 ) {
+  const params = await paramsPromise;
   try {
     const resume = await prisma.resume.findUnique({
       where: { id: params.id },
@@ -193,6 +157,7 @@ function deepMerge(
   const result: Record<string, unknown> = { ...target };
 
   for (const key of Object.keys(source)) {
+    if (["__proto__", "prototype", "constructor"].includes(key)) continue;
     const srcVal = source[key];
     const tgtVal = target[key];
 
