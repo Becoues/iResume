@@ -127,3 +127,37 @@ test("saving a provider switch removes the prior provider credential", async () 
     "",
   );
 });
+
+test("failed deep attempt retains the successful quick brief metadata", async () => {
+  const row = await db.resume.create({
+    data: { filename: "metadata.txt", pdfText: "本人负责支付系统开发" },
+  });
+  const quick = await runtime.claimBrief(row.id, "quick", config);
+  await runtime.finishBrief(
+    row.id,
+    quick.runId,
+    { version: 1, candidate: { name: "快速简报候选人" } } as never,
+    null,
+  );
+  const completedAt = new Date("2026-10-25T10:00:00.000Z");
+  await db.analysisRun.update({
+    where: { id: quick.runId },
+    data: { completedAt },
+  });
+  const deep = await runtime.claimBrief(row.id, "deep", {
+    ...config,
+    model: "deep-model",
+  });
+  await runtime.finishBrief(row.id, deep.runId, null, "模型连接失败");
+  const view = await runtime.getBriefState(row.id);
+  const resultRun = view.briefResultRun;
+  assert.equal(view.brief?.candidate.name, "快速简报候选人");
+  assert.equal(view.briefStatus, "failed");
+  assert.equal(view.briefRun?.id, deep.runId);
+  assert.equal(view.briefRun?.mode, "deep");
+  assert.equal(resultRun?.id, quick.runId);
+  assert.equal(resultRun?.mode, "quick");
+  assert.equal(resultRun?.status, "completed");
+  assert.equal(resultRun?.model, "test");
+  assert.equal(resultRun?.completedAt, "2026-10-25T10:00:00.000Z");
+});

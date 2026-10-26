@@ -17,13 +17,40 @@ import type {
 export class BriefNotFoundError extends Error {}
 const RUN_TIMEOUT_MS = 90_000;
 const STALE_MS = RUN_TIMEOUT_MS + 30_000;
-export async function getBriefState(
-  id: string,
-): Promise<{
+const publicRunSelect = {
+  id: true,
+  status: true,
+  mode: true,
+  createdAt: true,
+  completedAt: true,
+  provider: true,
+  model: true,
+} as const;
+function runInfo(
+  run: {
+    id: string;
+    status: string;
+    mode: string;
+    createdAt: Date;
+    completedAt: Date | null;
+    provider: string;
+    model: string;
+  } | null,
+): BriefRunInfo | null {
+  return run
+    ? {
+        ...run,
+        createdAt: run.createdAt.toISOString(),
+        completedAt: run.completedAt?.toISOString() || null,
+      }
+    : null;
+}
+export async function getBriefState(id: string): Promise<{
   brief: CandidateBrief | null;
   briefStatus: BriefStatus;
   briefError: string | null;
   briefRun: BriefRunInfo | null;
+  briefResultRun: BriefRunInfo | null;
 }> {
   await recoverStaleRuns(id);
   const row = await prisma.resume.findUnique({
@@ -36,20 +63,21 @@ export async function getBriefState(
     },
   });
   if (!row) throw new BriefNotFoundError("简历不存在");
-  const run = row.briefRunId
-    ? await prisma.analysisRun.findUnique({
-        where: { id: row.briefRunId },
-        select: {
-          id: true,
-          status: true,
-          mode: true,
-          createdAt: true,
-          completedAt: true,
-          provider: true,
-          model: true,
-        },
-      })
-    : null;
+  const [run, resultRun] = await Promise.all([
+    row.briefRunId
+      ? prisma.analysisRun.findUnique({
+          where: { id: row.briefRunId },
+          select: publicRunSelect,
+        })
+      : Promise.resolve(null),
+    row.briefJson
+      ? prisma.analysisRun.findFirst({
+          where: { resumeId: id, status: "completed" },
+          orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }],
+          select: publicRunSelect,
+        })
+      : Promise.resolve(null),
+  ]);
   let brief: CandidateBrief | null = null;
   try {
     if (row.briefJson) brief = JSON.parse(row.briefJson);
@@ -60,17 +88,8 @@ export async function getBriefState(
     brief,
     briefStatus: row.briefStatus as BriefStatus,
     briefError: row.briefError,
-    briefRun: run
-      ? {
-          id: run.id,
-          status: run.status,
-          mode: run.mode,
-          createdAt: run.createdAt.toISOString(),
-          completedAt: run.completedAt?.toISOString() || null,
-          provider: run.provider,
-          model: run.model,
-        }
-      : null,
+    briefRun: runInfo(run),
+    briefResultRun: brief ? runInfo(resultRun) : null,
   };
 }
 export async function recoverStaleRuns(resumeId: string) {
