@@ -1,348 +1,362 @@
 "use client";
-
-import { useState, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Upload, FileText, X, Loader2, Sparkles, Settings } from "lucide-react";
-import { SettingsDialog } from "@/components/settings-dialog";
+import {
+  ArrowRight,
+  Check,
+  FileText,
+  ListChecks,
+  MessageSquareText,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  UploadCloud,
+  X,
+} from "lucide-react";
+import { AiSettings } from "@/lib/prep-contract";
+import { apiJson, ErrorNotice, Spinner } from "@/components/prep/shared";
 
 export default function HomePage() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const input = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState<"file" | "text">("file");
   const [file, setFile] = useState<File | null>(null);
+  const [text, setText] = useState("");
   const [jd, setJd] = useState("");
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Pending state shown after upload when there are server-side warnings or
-  // truncations — the user must explicitly continue to acknowledge cost.
-  const [pending, setPending] = useState<{
-    id: string;
-    warnings: string[];
-    truncations: string[];
-    estimatedTotalTokens: number;
-  } | null>(null);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
+  const [showJd, setShowJd] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState("");
+  const [error, setError] = useState("");
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  useEffect(() => {
+    apiJson<AiSettings>("/api/settings")
+      .then((s) => setConfigured(Boolean(s.configured)))
+      .catch(() => {});
   }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    setError(null);
-
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === "application/pdf") {
-      setFile(droppedFile);
-    } else {
-      setError("请上传 PDF 格式的文件");
+  function chooseFile(next: File | null) {
+    setError("");
+    if (next && !/\.(pdf|docx?|txt|md|rtf|png|jpe?g|webp)$/i.test(next.name)) {
+      setError("请选择 PDF、Word、文本文件或 PNG / JPG / WebP 图片。");
+      return;
     }
-  }, []);
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setError(null);
-      const selectedFile = e.target.files?.[0];
-      if (selectedFile && selectedFile.type === "application/pdf") {
-        setFile(selectedFile);
-      } else if (selectedFile) {
-        setError("请上传 PDF 格式的文件");
-      }
-    },
-    []
-  );
-
-  const handleRemoveFile = useCallback(() => {
-    setFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    if (next && next.size > 10 * 1024 * 1024) {
+      setError("文件大小不能超过 10 MB，请压缩后重试。");
+      return;
     }
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!file) return;
-
-    setIsLoading(true);
-    setError(null);
-
+    setFile(next);
+  }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setStage("正在提取简历内容…");
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (jd.trim()) {
-        formData.append("jd", jd.trim());
+      let options: RequestInit;
+      if (tab === "file" && file) {
+        const body = new FormData();
+        body.append("file", file);
+        if (jd.trim()) body.append("jd", jd);
+        options = { method: "POST", body };
+      } else
+        options = {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, filename: "粘贴的简历.txt", jd }),
+        };
+      const result = await apiJson<{ id: string; warnings?: string[] }>(
+        "/api/resumes",
+        options,
+      );
+      if (result.warnings?.length) {
+        try {
+          sessionStorage.setItem(
+            `prep-warnings-${result.id}`,
+            JSON.stringify(result.warnings),
+          );
+        } catch {}
       }
-
-      const res = await fetch("/api/resumes", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "上传失败，请重试");
-      }
-
-      const data = await res.json();
-      const warnings: string[] = data.warnings ?? [];
-      const truncations: string[] = data.truncations ?? [];
-
-      // If the server flagged anything, hold on the homepage so the user
-      // sees the warning before kicking off an analysis that could cost more
-      // than expected. Otherwise jump straight to the detail page.
-      if (warnings.length > 0 || truncations.length > 0) {
-        setPending({
-          id: data.id,
-          warnings,
-          truncations,
-          estimatedTotalTokens: data.estimatedTotalTokens ?? 0,
+      setStage("正在创建面试简报…");
+      try {
+        await apiJson(`/api/briefs/${result.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "quick" }),
         });
-        setIsLoading(false);
-        return;
+      } catch (err) {
+        try {
+          sessionStorage.setItem(
+            `prep-start-error-${result.id}`,
+            err instanceof Error ? err.message : "生成未启动，请重试。",
+          );
+        } catch {}
       }
-
-      router.push(`/resumes/${data.id}`);
+      router.push(`/resumes/${result.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传失败，请重试");
-      setIsLoading(false);
+      setError(err instanceof Error ? err.message : "上传失败，请重试。");
+      setBusy(false);
     }
-  };
-
+  }
   return (
-    <main className="min-h-screen bg-background flex items-center justify-center px-4 py-16">
-      <div className="w-full max-w-2xl space-y-8 animate-fade-in">
-        {/* Hero Section */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium mb-2">
-            <Sparkles className="w-4 h-4" />
-            AI 驱动的简历分析
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            上传简历开始评估
-          </h1>
-          <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
-            上传您的简历，AI 将从多个维度进行深度分析，帮助您优化简历内容，提升求职竞争力。
-          </p>
+    <div className="page home-page">
+      <div className="page-heading">
+        <div className="eyebrow">
+          <span /> READY FOR YOUR NEXT INTERVIEW
         </div>
-
-        {/* Upload Zone Card */}
-        <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm p-6 space-y-2">
-          <label className="block text-sm font-medium text-foreground mb-1">
-            简历文件
-          </label>
-          <p className="text-sm text-muted-foreground mb-4">
-            支持 PDF 格式
-          </p>
-
-          {!file ? (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => fileInputRef.current?.click()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  fileInputRef.current?.click();
-                }
-              }}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`
-                relative flex flex-col items-center justify-center gap-4
-                w-full min-h-[200px] rounded-lg border-2 border-dashed
-                cursor-pointer transition-all duration-200 ease-in-out
-                ${
-                  isDragOver
-                    ? "border-primary bg-primary/5 scale-[1.01]"
-                    : "border-border hover:border-primary/50 hover:bg-muted/50"
-                }
-              `}
-              aria-label="上传简历文件"
-            >
-              <div
-                className={`
-                  rounded-full p-4 transition-colors duration-200
-                  ${isDragOver ? "bg-primary/10" : "bg-muted"}
-                `}
-              >
-                <Upload
-                  className={`w-8 h-8 transition-colors duration-200 ${
-                    isDragOver ? "text-primary" : "text-muted-foreground"
-                  }`}
-                />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-medium text-foreground">
-                  拖拽文件到此处，或{" "}
-                  <span className="text-primary underline underline-offset-4">
-                    点击选择文件
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  仅支持 PDF 格式
-                </p>
-              </div>
+        <h1>
+          好面试，从充分准备开始<span className="blue-period">.</span>
+        </h1>
+        <p>放入一份简历，把有限的准备时间留给真正值得问的问题。</p>
+      </div>
+      {configured === false && (
+        <div className="notice config-notice">
+          <Sparkles size={18} />
+          <div>
+            首次使用，请先连接你的 AI 模型。
+            <Link href="/settings">
+              前往模型设置 <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      )}
+      <div className="home-grid">
+        <section className="panel input-panel">
+          <div className="panel-title">
+            <span className="step-number">01</span>
+            <div>
+              <h2>添加候选人简历</h2>
+              <p>一份简历，一次有重点的准备</p>
             </div>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 p-4 transition-all duration-200">
-              <div className="rounded-lg bg-primary/10 p-2.5">
-                <FileText className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {file.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {(file.size / 1024).toFixed(1)} KB
-                </p>
-              </div>
+          </div>
+          <form onSubmit={submit}>
+            <div
+              className="input-tabs"
+              role="tablist"
+              aria-label="简历输入方式"
+            >
               <button
                 type="button"
-                onClick={handleRemoveFile}
-                className="rounded-full p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
-                aria-label="移除文件"
+                role="tab"
+                aria-selected={tab === "file"}
+                aria-controls="resume-input"
+                onClick={() => setTab("file")}
+                className={tab === "file" ? "selected" : ""}
               >
-                <X className="w-4 h-4" />
+                <UploadCloud size={16} /> 上传文件
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "text"}
+                aria-controls="resume-input"
+                onClick={() => setTab("text")}
+                className={tab === "text" ? "selected" : ""}
+              >
+                <FileText size={16} /> 粘贴文本
               </button>
             </div>
-          )}
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileSelect}
-            className="hidden"
-            aria-hidden="true"
-          />
-        </div>
-
-        {/* JD Textarea Card */}
-        <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm p-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="jd-textarea"
-              className="block text-sm font-medium text-foreground"
+            <div id="resume-input" role="tabpanel">
+              {tab === "file" ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragging(false);
+                    if (!busy) chooseFile(e.dataTransfer.files[0] || null);
+                  }}
+                  className={`dropzone ${dragging ? "dragging" : ""} ${file ? "has-file" : ""}`}
+                >
+                  <input
+                    ref={input}
+                    type="file"
+                    id="resume-file"
+                    className="sr-only"
+                    accept=".pdf,.doc,.docx,.txt,.md,.rtf,.png,.jpg,.jpeg,.webp"
+                    onChange={(e) => chooseFile(e.target.files?.[0] || null)}
+                    disabled={busy}
+                  />
+                  {file ? (
+                    <>
+                      <div className="upload-symbol">
+                        <FileText size={28} />
+                      </div>
+                      <strong className="file-name">{file.name}</strong>
+                      <span className="muted">
+                        {(file.size / 1024 / 1024).toFixed(2)} MB · 已选择
+                      </span>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => {
+                          chooseFile(null);
+                          if (input.current) input.current.value = "";
+                        }}
+                      >
+                        <X size={14} /> 移除文件
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="upload-symbol">
+                        <UploadCloud size={28} strokeWidth={1.6} />
+                      </div>
+                      <strong>将简历拖到这里</strong>
+                      <span className="muted">或从你的设备中选择文件</span>
+                      <button
+                        type="button"
+                        className="button secondary choose-file"
+                        onClick={() => input.current?.click()}
+                        disabled={busy}
+                      >
+                        选择简历 <Plus size={15} />
+                      </button>
+                      <span className="file-formats">
+                        PDF · DOC / DOCX · TXT / MD / RTF · 图片 · 最大 10 MB
+                      </span>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="paste-input">
+                  <label htmlFor="resume-text" className="sr-only">
+                    简历正文
+                  </label>
+                  <textarea
+                    id="resume-text"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    disabled={busy}
+                    placeholder="将候选人的简历正文粘贴到这里，保留项目经历、职责与成果等信息…"
+                    rows={10}
+                    required
+                  />
+                  <span className="char-count">
+                    {text.length.toLocaleString()} 字符
+                  </span>
+                </div>
+              )}
+            </div>
+            <p className="input-hint">
+              <ShieldCheck size={14} />{" "}
+              图片和扫描件会进行文字识别，请核对提取后的原文。
+            </p>
+            <div className="jd-section">
+              <button
+                type="button"
+                className="jd-toggle"
+                aria-expanded={showJd}
+                aria-controls="jd-field"
+                onClick={() => setShowJd(!showJd)}
+              >
+                <span>
+                  <span className="step-number small">02</span> 添加岗位描述{" "}
+                  <span className="optional">可选</span>
+                </span>
+                <Plus size={17} className={showJd ? "rotate" : ""} />
+              </button>
+              {showJd && (
+                <div id="jd-field">
+                  <p className="muted">
+                    加上岗位职责和要求，让问题更贴近你正在招聘的角色。
+                  </p>
+                  <label htmlFor="jd-text" className="sr-only">
+                    岗位描述
+                  </label>
+                  <textarea
+                    id="jd-text"
+                    value={jd}
+                    onChange={(e) => setJd(e.target.value)}
+                    disabled={busy}
+                    placeholder="粘贴岗位描述，或写下这次面试最想了解的能力…"
+                    rows={5}
+                  />
+                </div>
+              )}
+            </div>
+            {error && <ErrorNotice>{error}</ErrorNotice>}
+            <button
+              type="submit"
+              className="button primary generate-button"
+              disabled={busy || (tab === "file" ? !file : !text.trim())}
             >
-              职位描述 (JD)
-            </label>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-              可选
+              {busy ? (
+                <Spinner label={stage} />
+              ) : (
+                <>
+                  <Sparkles size={17} /> 生成面试简报 <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+            <p className="submit-note">先看关键经历，再带着依据提问。</p>
+          </form>
+        </section>
+        <aside className="prep-preview">
+          <div className="preview-header">
+            <span className="small-eyebrow">YOUR PREPARATION, SIMPLIFIED</span>
+            <span className="preview-mini-mark">
+              <Sparkles size={17} />
             </span>
           </div>
-          <textarea
-            id="jd-textarea"
-            value={jd}
-            onChange={(e) => setJd(e.target.value)}
-            placeholder="粘贴职位描述，用于更精准的匹配分析..."
-            rows={5}
-            className="
-              w-full rounded-lg border border-input bg-background px-4 py-3
-              text-sm text-foreground placeholder:text-muted-foreground
-              resize-y min-h-[120px]
-              transition-colors duration-200
-              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background
-            "
-          />
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive animate-fade-in">
-            {error}
-          </div>
-        )}
-
-        {/* Length-guard banner — surfaced when the server truncated input or
-            estimated cost exceeded a soft threshold. Forces the user to
-            acknowledge before continuing to the detail page. */}
-        {pending && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm space-y-2 animate-fade-in">
-            <div className="font-semibold text-amber-900">⚠️ 上传成功但请注意</div>
-            {pending.truncations.map((t, i) => (
-              <p key={`t-${i}`} className="text-red-700">{t}</p>
-            ))}
-            {pending.warnings.map((w, i) => (
-              <p key={`w-${i}`} className="text-amber-800">{w}</p>
-            ))}
-            {pending.estimatedTotalTokens > 0 && (
-              <p className="text-amber-800">
-                10 个模块预计共消耗 ~<span className="font-mono font-semibold">{pending.estimatedTotalTokens.toLocaleString()}</span> tokens（粗略估算）
-              </p>
-            )}
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => router.push(`/resumes/${pending.id}`)}
-                className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
-              >
-                我知道了，继续
-              </button>
-              <button
-                type="button"
-                onClick={() => setPending(null)}
-                className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
-              >
-                取消
-              </button>
+          <h2>
+            一份简报，
+            <br />
+            三个准备重点。
+          </h2>
+          <p className="preview-intro">
+            把简历里的信息，转化为下一场对话的起点。
+          </p>
+          <div className="preview-items">
+            <div>
+              <span className="preview-icon">
+                <FileText size={20} />
+              </span>
+              <section>
+                <h3>快速认识候选人</h3>
+                <p>
+                  梳理经历主线、能力线索
+                  <br />
+                  与最相关的项目。
+                </p>
+              </section>
+            </div>
+            <div>
+              <span className="preview-icon">
+                <ListChecks size={20} />
+              </span>
+              <section>
+                <h3>找到值得核实的细节</h3>
+                <p>
+                  区分简历事实与待验证判断，
+                  <br />
+                  回到原文查看依据。
+                </p>
+              </section>
+            </div>
+            <div>
+              <span className="preview-icon">
+                <MessageSquareText size={20} />
+              </span>
+              <section>
+                <h3>带走 3—5 个好问题</h3>
+                <p>
+                  知道为什么问、重点听什么，
+                  <br />
+                  以及如何继续追问。
+                </p>
+              </section>
             </div>
           </div>
-        )}
-
-        {/* Submit Button */}
-        <button
-          type="button"
-          disabled={!file || isLoading}
-          onClick={handleSubmit}
-          className="
-            w-full flex items-center justify-center gap-2
-            rounded-xl px-6 py-3.5
-            text-sm font-semibold text-white
-            bg-gradient-to-r from-primary to-primary/80
-            shadow-lg shadow-primary/20
-            transition-all duration-200
-            hover:shadow-xl hover:shadow-primary/30 hover:brightness-110
-            active:scale-[0.99]
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:brightness-100
-          "
-          aria-label={isLoading ? "正在分析中" : "开始分析"}
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              正在上传分析中...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              开始分析
-            </>
-          )}
-        </button>
+          <div className="preview-bottom">
+            <Check size={15} /> 保留原文依据 <span /> 随时打印简报
+          </div>
+        </aside>
       </div>
-
-      {/* Settings gear button */}
-      <button
-        type="button"
-        onClick={() => setSettingsOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background shadow-md text-muted-foreground hover:text-foreground hover:shadow-lg transition-all duration-200"
-        aria-label="设置"
-      >
-        <Settings className="w-5 h-5" />
-      </button>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </main>
+    </div>
   );
 }
