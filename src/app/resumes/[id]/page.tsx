@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { successfulBriefRun } from "@/components/prep/brief-result";
 import {
   ArrowLeft,
   ArrowRight,
@@ -177,6 +178,7 @@ export default function ResumeDetailPage() {
   }
   const busy = requesting || resume?.briefStatus === "running";
   const brief = resume?.brief;
+  const resultRun = resume ? successfulBriefRun(resume) : null;
   return (
     <div className="page detail-page">
       <div className="detail-toolbar no-print">
@@ -295,7 +297,11 @@ export default function ResumeDetailPage() {
               <div className="eyebrow">
                 CANDIDATE BRIEFING{" "}
                 <span className="brief-version">
-                  {resume.briefRun?.mode === "deep" ? "深入准备" : "快速简报"}
+                  {resultRun?.mode === "deep"
+                    ? "深入准备"
+                    : resultRun
+                      ? "快速简报"
+                      : "已保存简报"}
                 </span>
               </div>
               <h1>{brief.candidate.name || "候选人"}</h1>
@@ -303,10 +309,9 @@ export default function ResumeDetailPage() {
               <div className="candidate-meta">
                 <span>{brief.candidate.experience}</span>
                 <span>
-                  准备于{" "}
-                  {formatDate(
-                    resume.briefRun?.completedAt || resume.uploadDate,
-                  )}
+                  {resultRun?.completedAt
+                    ? `准备于 ${formatDate(resultRun.completedAt)}`
+                    : "生成时间未记录"}
                 </span>
               </div>
             </div>

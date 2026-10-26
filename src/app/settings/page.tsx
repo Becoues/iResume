@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { AiProvider, AiSettings } from "@/lib/prep-contract";
 import { apiJson, ErrorNotice, Spinner } from "@/components/prep/shared";
+import { switchProviderDraft } from "@/components/prep/settings-draft";
 const initial: AiSettings = {
   provider: "CometAPI",
   model: "",
@@ -51,17 +52,7 @@ export default function SettingsPage() {
     setSaved(false);
   }
   function selectProvider(provider: AiProvider) {
-    setSettings((s) => ({
-      ...s,
-      provider,
-      baseUrl:
-        provider === "CometAPI"
-          ? "https://api.cometapi.com/v1"
-          : provider === "OpenAI-compatible" &&
-              s.baseUrl === "https://api.cometapi.com/v1"
-            ? ""
-            : s.baseUrl,
-    }));
+    setSettings((draft) => switchProviderDraft(draft, provider));
     setMessage("");
     setSaved(false);
   }
