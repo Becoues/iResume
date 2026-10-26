@@ -202,7 +202,7 @@ export async function startBrief(id: string, mode: BriefMode = "quick") {
               BRIEF_SYSTEM,
               briefPrompt(pdfText, jdText, mode, repair),
               signal,
-              mode === "quick" ? 4000 : 6500,
+              mode === "quick" ? 6500 : 10000,
             ),
         });
         await finishBrief(id, claim.runId, result, null);

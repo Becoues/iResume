@@ -13,6 +13,8 @@ const question = z.object({
   evidence,
   listenFor: z.array(short).min(1).max(5),
   followUps: z.array(short).min(1).max(5),
+  priority: z.enum(["high", "medium"]).optional(),
+  dimension: short.optional(),
 });
 const schema = z.object({
   version: z.literal(1),
@@ -24,8 +26,33 @@ const schema = z.object({
   }),
   summary: short,
   fitSummary: short,
+  highlights: z
+    .array(z.object({ title: short, detail: short, evidence }))
+    .max(3)
+    .optional(),
+  capabilities: z
+    .array(
+      z.object({
+        dimension: short,
+        observation: short,
+        verification: short,
+        evidence,
+      }),
+    )
+    .max(5)
+    .optional(),
   experiences: z
-    .array(z.object({ title: short, relevance: short, evidence }))
+    .array(
+      z.object({
+        title: short,
+        relevance: short,
+        evidence,
+        contribution: short.optional(),
+        challenge: short.optional(),
+        approach: short.optional(),
+        results: short.optional(),
+      }),
+    )
     .max(3),
   verificationPoints: z
     .array(z.object({ title: short, reason: short, evidence }))
@@ -54,6 +81,8 @@ export function parseBrief(
   const ids = new Set(parsed.questions.map((q) => q.id));
   if (ids.size !== parsed.questions.length) throw new Error("问题 ID 重复");
   for (const item of [
+    ...(parsed.highlights ?? []),
+    ...(parsed.capabilities ?? []),
     ...parsed.experiences,
     ...parsed.verificationPoints,
     ...parsed.questions,
