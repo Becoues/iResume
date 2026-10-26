@@ -10,3 +10,9 @@ node_modules
 .claude
 .DS_Store
 docs/images
+
+data
+tessdata
+.superpowers
+test-results
+playwright-report

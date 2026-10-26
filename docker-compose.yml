@@ -2,11 +2,13 @@ services:
   iresume:
     build: .
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     volumes:
-      - ./prisma:/app/prisma
-      - ./data:/app/data
+      - iresume-data:/app/data
+    env_file: .env
     environment:
-      - DATABASE_URL=file:/app/prisma/dev.db
-      - RECORDINGS_DIR=/app/data/recordings
+      - DATABASE_URL=file:/app/data/iresume.db
+      - OCR_LANG_PATH=/app/tessdata
     restart: unless-stopped
+volumes:
+  iresume-data:

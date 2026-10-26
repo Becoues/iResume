@@ -30,3 +30,7 @@ Thumbs.db
 
 # build info
 tsconfig.tsbuildinfo
+tessdata/
+test-results/
+playwright-report/
+.superpowers/
