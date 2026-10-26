@@ -31,6 +31,9 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saved, setSaved] = useState(false);
+  const bedrockModel = settings.model.trim();
+  const usesBedrockMantle = bedrockModel.startsWith("openai.");
+  const bedrockMantleEndpoint = `https://bedrock-mantle.${settings.region.trim() || "us-west-2"}.api.aws${bedrockModel.startsWith("openai.gpt-oss") ? "/v1" : "/openai/v1"}/responses`;
   async function load() {
     setLoading(true);
     setError("");
@@ -241,9 +244,30 @@ export default function SettingsPage() {
                 disabled={Boolean(busy)}
               />
               <small>
-                {settings.provider === "Bedrock"
-                  ? "请确认该模型在所选 Region 可用，且服务器有调用权限。"
-                  : "请填写准确的模型名称，并确认账户有调用权限。"}
+                {settings.provider === "Bedrock" ? (
+                  usesBedrockMantle ? (
+                    <>
+                      已自动使用 Bedrock Mantle / Responses API
+                      <br />
+                      {bedrockMantleEndpoint}
+                      {settings.authMode === "default" && (
+                        <>
+                          <br />
+                          该模型 ID 需使用 Bedrock API Key；使用默认 AWS
+                          凭据时，请改填 inference profile ID / ARN。
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      使用 Bedrock Runtime / Converse API。请确认模型在所选 Region
+                      可用，且服务器有调用权限；需要跨区域推理时，请填写 inference
+                      profile ID / ARN。
+                    </>
+                  )
+                ) : (
+                  "请填写准确的模型名称，并确认账户有调用权限。"
+                )}
               </small>
             </div>
             {error && <ErrorNotice>{error}</ErrorNotice>}
