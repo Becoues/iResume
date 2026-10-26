@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { successfulBriefRun } from "@/components/prep/brief-result";
+import { BriefOutline, BriefSection } from "@/components/prep/brief-outline";
 import {
   ArrowLeft,
   ArrowRight,
@@ -41,11 +42,22 @@ function QuestionCard({ item, index }: { item: PrepQuestion; index: number }) {
     }
   }
   return (
-    <article className="question-card">
+    <article className="question-card" id={`question-${index + 1}`}>
       <div className="question-number">
         {String(index + 1).padStart(2, "0")}
       </div>
       <div className="question-body">
+        {(item.priority || item.dimension || index < 2) && (
+          <div className="question-labels">
+            {item.priority && (
+              <span className={`priority-badge priority-${item.priority}`}>
+                {item.priority === "high" ? "优先必问" : "延伸了解"}
+              </span>
+            )}
+            {!item.priority && index < 2 && <span className="priority-badge priority-high">建议先问</span>}
+            {item.dimension && <span className="dimension-badge">{item.dimension}</span>}
+          </div>
+        )}
         <div className="question-title">
           <h3>{item.question}</h3>
           <button
@@ -62,7 +74,7 @@ function QuestionCard({ item, index }: { item: PrepQuestion; index: number }) {
           {item.purpose}
         </p>
         <Evidence evidence={item.evidence} />
-        <details className="question-expansion">
+        <details className="question-expansion" open>
           <summary>
             <span>重点听什么 & 如何追问</span>
             <ChevronDown size={15} />
@@ -179,6 +191,18 @@ export default function ResumeDetailPage() {
   const busy = requesting || resume?.briefStatus === "running";
   const brief = resume?.brief;
   const resultRun = resume ? successfulBriefRun(resume) : null;
+  const sections: BriefSection[] = brief ? [
+    { id: "overview", title: "候选人概览" },
+    ...(brief.highlights?.length ? [{ id: "highlights", title: "面试重点", count: brief.highlights.length }] : []),
+    ...(brief.experiences.length ? [{ id: "experience", title: "关键经历", count: brief.experiences.length }] : []),
+    ...(brief.capabilities?.length ? [{ id: "capabilities", title: "能力观察", count: brief.capabilities.length }] : []),
+    ...(brief.questions.length ? [{
+      id: "questions", title: "面试问题", count: brief.questions.length,
+      children: brief.questions.map((item, index) => ({ id: `question-${index + 1}`, title: item.question })),
+    }] : []),
+    ...(brief.verificationPoints.length ? [{ id: "verification", title: "待核实事项", count: brief.verificationPoints.length }] : []),
+    ...(brief.uncertainties.length ? [{ id: "gaps", title: "信息边界", count: brief.uncertainties.length }] : []),
+  ] : [];
   return (
     <div className="page detail-page">
       <div className="detail-toolbar no-print">
@@ -326,14 +350,25 @@ export default function ResumeDetailPage() {
           </section>
           <div className="brief-layout">
             <div className="brief-main">
-              <section className="panel briefing-section">
+              <section className="panel briefing-section overview-section" id="overview">
                 <div className="section-heading">
                   <span className="section-icon">
                     <FileText size={18} />
                   </span>
-                  <h2>先用一分钟，认识候选人</h2>
+                  <h2>候选人概览</h2>
                 </div>
                 <p className="brief-summary">{brief.summary}</p>
+                <div className="brief-at-a-glance" aria-label="简报内容概览">
+                  {brief.experiences.length > 0 && (
+                    <a href="#experience"><strong>{brief.experiences.length}</strong><span>段关键经历</span></a>
+                  )}
+                  {brief.questions.length > 0 && (
+                    <a href="#questions"><strong>{brief.questions.length}</strong><span>个面试问题</span></a>
+                  )}
+                  {brief.verificationPoints.length > 0 && (
+                    <a href="#verification"><strong>{brief.verificationPoints.length}</strong><span>项待核实</span></a>
+                  )}
+                </div>
                 <div className="skill-tags">
                   {brief.candidate.skills.map((skill, i) => (
                     <span key={i}>{skill}</span>
@@ -348,7 +383,27 @@ export default function ResumeDetailPage() {
                   </div>
                 )}
               </section>
-              <section className="panel briefing-section">
+              {!!brief.highlights?.length && (
+                <section className="panel briefing-section" id="highlights">
+                  <div className="section-heading">
+                    <span className="section-icon"><Target size={18} /></span>
+                    <h2>这次面试，重点看什么</h2>
+                    <span className="section-count">{brief.highlights.length}</span>
+                  </div>
+                  <div className="highlight-grid">
+                    {brief.highlights.map((item, index) => (
+                      <article className="highlight-card" key={index}>
+                        <span className="highlight-label">重点 {String(index + 1).padStart(2, "0")}</span>
+                        <h3>{item.title}</h3>
+                        <p>{item.detail}</p>
+                        <Evidence evidence={item.evidence} />
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {brief.experiences.length > 0 && (
+              <section className="panel briefing-section" id="experience">
                 <div className="section-heading">
                   <span className="section-icon">
                     <Target size={18} />
@@ -364,11 +419,41 @@ export default function ResumeDetailPage() {
                       <span className="experience-dot" />
                       <h3>{item.title}</h3>
                       <p>{item.relevance}</p>
+                      <dl className="experience-details">
+                        {item.contribution && <div><dt>职责与贡献</dt><dd>{item.contribution}</dd></div>}
+                        {item.challenge && <div><dt>关键挑战</dt><dd>{item.challenge}</dd></div>}
+                        {item.approach && <div><dt>做法与取舍</dt><dd>{item.approach}</dd></div>}
+                        {item.results && <div><dt>结果与影响</dt><dd>{item.results}</dd></div>}
+                      </dl>
                       <Evidence evidence={item.evidence} />
                     </article>
                   ))}
                 </div>
               </section>
+              )}
+              {!!brief.capabilities?.length && (
+                <section className="panel briefing-section" id="capabilities">
+                  <div className="section-heading">
+                    <span className="section-icon"><Target size={18} /></span>
+                    <h2>能力观察与验证方向</h2>
+                    <span className="section-count">{brief.capabilities.length}</span>
+                  </div>
+                  <p className="section-subtitle">区分简历中的线索与面试中需要验证的能力。</p>
+                  <div className="capability-list">
+                    {brief.capabilities.map((item, index) => (
+                      <article className="capability-card" key={index}>
+                        <h3>{item.dimension}</h3>
+                        <dl>
+                          <div><dt>简历观察</dt><dd>{item.observation}</dd></div>
+                          <div><dt>面试验证</dt><dd>{item.verification}</dd></div>
+                        </dl>
+                        <Evidence evidence={item.evidence} />
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {brief.questions.length > 0 && (
               <section
                 className="panel briefing-section questions-section"
                 id="questions"
@@ -393,13 +478,48 @@ export default function ResumeDetailPage() {
                   />
                 ))}
               </section>
+              )}
+              {brief.verificationPoints.length > 0 && (
+                <section className="panel briefing-section verification-section" id="verification">
+                  <div className="section-heading">
+                    <span className="section-icon"><BookOpen size={18} /></span>
+                    <h2>带着这些疑问去聊</h2>
+                    <span className="section-count">{brief.verificationPoints.length}</span>
+                  </div>
+                  <p className="section-subtitle">以下是需要确认的线索，并非对候选人的结论。</p>
+                  <div className="verification-list">
+                    {brief.verificationPoints.map((item, index) => (
+                      <article key={index}>
+                        <span className="verification-index">{String(index + 1).padStart(2, "0")}</span>
+                        <div>
+                          <h3>{item.title}</h3>
+                          <p>{item.reason}</p>
+                          <Evidence evidence={item.evidence} />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {brief.uncertainties.length > 0 && (
+                <section className="panel briefing-section gaps-section" id="gaps">
+                  <div className="section-heading">
+                    <span className="section-icon"><FileText size={18} /></span>
+                    <h2>信息边界</h2>
+                    <span className="section-count">{brief.uncertainties.length}</span>
+                  </div>
+                  <ul className="gap-list">
+                    {brief.uncertainties.map((text, index) => <li key={index}>{text}</li>)}
+                  </ul>
+                </section>
+              )}
               <div className="deep-prep no-print">
                 <div>
-                  <span className="small-eyebrow">
-                    TAKE IT A LITTLE FURTHER
-                  </span>
                   <h3>还想准备得更深入？</h3>
                   <p>围绕项目细节和待核实点，补充更具体的提问。</p>
+                  {!brief.highlights?.length && !brief.capabilities?.length && (
+                    <p>这是已保存的简报，重新生成可获取更完整的经历拆解与能力观察。</p>
+                  )}
                 </div>
                 <button
                   className="button secondary"
@@ -415,42 +535,6 @@ export default function ResumeDetailPage() {
                   )}
                 </button>
               </div>
-            </div>
-            <aside className="brief-aside">
-              <section className="panel verification-panel">
-                <span className="small-eyebrow">KEEP CURIOUS</span>
-                <h2>带着这些疑问去聊</h2>
-                <p className="aside-intro">
-                  以下是需要确认的线索，
-                  <br />
-                  并非对候选人的结论。
-                </p>
-                {brief.verificationPoints.map((item, i) => (
-                  <article key={i}>
-                    <span className="verification-index">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <h3>{item.title}</h3>
-                    <p>{item.reason}</p>
-                    <Evidence evidence={item.evidence} />
-                  </article>
-                ))}
-                {!brief.verificationPoints.length && (
-                  <p className="muted">
-                    暂未提取到明确的待核实点，可围绕实际职责与成果追问。
-                  </p>
-                )}
-              </section>
-              {brief.uncertainties.length > 0 && (
-                <section className="uncertainties">
-                  <h3>信息边界</h3>
-                  <ul>
-                    {brief.uncertainties.map((text, i) => (
-                      <li key={i}>{text}</li>
-                    ))}
-                  </ul>
-                </section>
-              )}
               <p className="ai-note">
                 简报由 AI
                 辅助整理，请结合原文判断。它帮助你提出问题，不替你作出录用决定。
@@ -462,7 +546,8 @@ export default function ResumeDetailPage() {
               >
                 <RefreshCw size={14} /> 重新生成快速简报
               </button>
-            </aside>
+            </div>
+            <BriefOutline sections={sections} />
           </div>
         </>
       )}
