@@ -24,6 +24,12 @@ model Resume {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   recordings   Recording[]
+  sourceType   String      @default("pdf")
+  briefJson    String?
+  briefStatus  String      @default("idle")
+  briefError   String?
+  briefRunId   String?
+  analysisRuns AnalysisRun[]
 
   @@index([uploadDate])
   @@index([status])
@@ -52,5 +58,28 @@ model Settings {
   provider        String   @default("CometAPI")
   apiKeyCometapi  String   @default("")
   model           String   @default("gemini-3.1-pro-preview")
+  baseUrl         String   @default("")
+  region          String   @default("us-west-2")
+  authMode        String   @default("default")
+  apiKeyEncrypted String   @default("")
+  bedrockKeyEncrypted String @default("")
   updatedAt       DateTime @updatedAt
+}
+
+model AnalysisRun {
+  id          String   @id @default(cuid())
+  resumeId    String
+  status      String   @default("running")
+  mode        String
+  provider    String
+  model       String
+  configJson  String
+  resultJson  String?
+  error       String?
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+  resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, createdAt])
+  @@index([status, createdAt])
 }

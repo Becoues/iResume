@@ -1,24 +1,19 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { DEFAULT_PROVIDER, testConnection } from "@/lib/openai";
-
+import { getRuntimeConfig, validateSettings } from "@/lib/ai/config";
+import { publicError, testJsonConnection } from "@/lib/ai/client";
 export const dynamic = "force-dynamic";
-
+export const runtime = "nodejs";
+export const maxDuration = 30;
 export async function POST(request: Request) {
-  const body = await request.json();
-  let { apiKey } = body as { apiKey: string };
-  const { model, provider } = body as { model: string; provider?: string };
-
-  // Resolve masked key from DB
-  if (typeof apiKey === "string" && (apiKey.includes("...") || apiKey.includes("••"))) {
-    const stored = await prisma.settings.findUnique({ where: { id: 1 } });
-    apiKey = stored?.apiKeyCometapi ?? "";
+  try {
+    const body = validateSettings(await request.json());
+    return NextResponse.json(
+      await testJsonConnection(await getRuntimeConfig(body)),
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: publicError(error) },
+      { status: 400 },
+    );
   }
-
-  if (!apiKey) {
-    return NextResponse.json({ ok: false, error: "API Key 未填写" });
-  }
-
-  const result = await testConnection(apiKey, model, provider || DEFAULT_PROVIDER);
-  return NextResponse.json(result);
 }
